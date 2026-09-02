@@ -34,19 +34,6 @@ entries:
       comment: kickside.component:component client library — component.open / component.get_private_context used to read connection credentials.
     component: kickside/component
 
-  # cotique.gitlab_provider:dep.kickside.core
-  # NOTE: kickside.data:pullable / kickside.data:writable are exact registry
-  # ids confirmed by `wippy registry show kickside.data:pullable --json` per
-  # the shared build brief (2026-09-02). Which installed package actually
-  # DECLARES them was independently re-verified for this checkout instead of
-  # assumed — see BUILD-NOTES.md "Dependency that owns kickside.data:pullable".
-  - version: "*"
-    name: dep.kickside.core
-    kind: ns.dependency
-    meta:
-      comment: Owns the kickside.data:pullable contract definition implemented by the merge-request pull source (verified — see BUILD-NOTES.md).
-    component: kickside/core
-
   # ─── Dependency interface (ns.requirement) ────────────────────────────
   - name: api_router
     kind: ns.requirement

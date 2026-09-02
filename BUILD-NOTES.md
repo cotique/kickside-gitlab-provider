@@ -32,24 +32,42 @@ useful cross-confirmation, not coincidence.
 - No OAuth needed (GitLab uses personal/project access tokens only, per the
   provider brief) — `kickside/oauth` is deliberately not a dependency.
 
-### Verifying which package owns `kickside.data:pullable` (per the provider
-brief's explicit instruction — "do not assume, verify this exact mechanical
-step yourself")
+### Verifying which package owns `kickside.data:pullable` — corrected, an
+earlier experiment here was wrong
 
-Before this module had `kickside/core` as a dependency,
-`wippy registry list --ns "kickside.data*"` returned nothing under that
-namespace. After adding `kickside/core` (version `"*"`) and running
-`wippy update`, the same command returned:
+An earlier pass added an explicit `dep.kickside.core` to `src/_index.yaml`
+after observing `wippy registry list --ns "kickside.data*"` return nothing
+without it. That observation was real, but the conclusion drawn from it
+("`kickside/core` is the correct, real dependency for `kickside.data:pullable`,
+declare it explicitly") was wrong — most likely the experiment ran before
+`kickside/connection`/`kickside/component` were both already present as
+dependencies, not because `kickside/core` is actually required.
 
-```
-kickside.data:data_connector_manifest_schema  registry.entry
-kickside.data:external_record_writer          contract.definition
-kickside.data:pullable                        contract.definition
-kickside.data:writable                        contract.definition
-```
+**Corrected against the real reference** (checking
+`providers-master\providers-master\github\src\_index.yaml` and
+`...\atlassian\src\_index.yaml` directly): neither real module declares
+`kickside/core` at all — both stop at `kickside/component`,
+`kickside/connection`, `kickside/contract`, plus `kickside/oauth`/
+`kickside/settings` for their OAuth mode (which this module correctly
+doesn't have). **Cross-checked against this module's own sibling,
+`kickside-bitbucket-provider`**, which never had this extra dependency and
+still resolves `kickside.data:pullable` cleanly
+(`wippy registry list --ns "kickside.data*"` → all 4 entries, no
+`kickside/core` in `src/_index.yaml`, confirmed present only transitively in
+`wippy.lock`).
 
-Confirmed: `kickside/core` is the correct, real dependency for
-`kickside.data:pullable`.
+**Fix applied:** removed `dep.kickside.core` from `src/_index.yaml` entirely.
+Re-verified: `wippy update` + `wippy registry list --ns "kickside.data*"`
+still returns all 4 entries (`pullable`, `writable`,
+`external_record_writer`, `data_connector_manifest_schema`) without it —
+`kickside/component`/`kickside/connection`/`kickside/contract` alone pull it
+in transitively, exactly matching both the real reference modules and this
+module's own sibling. `make verify` re-run clean after the removal (37/37).
+**Lesson for next time:** a mechanical experiment that changes one variable
+at a time still needs the *other* variables held at their real final state,
+not an earlier, incomplete one — the original test's "removed core, lost the
+namespace" observation was true but confounded by an incomplete dependency
+set at that point in the build, not by core actually being required.
 
 ## Structure built
 
@@ -697,3 +715,40 @@ full ids, e.g. `cotique.gitlab_provider.client:output`), and they now run:
   content is at fault — this is what surfaced finding #2 above as a CLI
   bug rather than a config mistake, in a fraction of the time random
   guessing would have taken.
+
+## Structural audit against the real reference modules (2026-09-02)
+
+With `providers-master\providers-master\atlassian` and `...\github` available
+locally, did a full file-by-file structural comparison beyond just the
+`kickside.data:pullable` envelope (already covered above). Checked and
+confirmed fine, no change needed:
+
+- `client/site.lua`-style base-URL/tenant resolution (Atlassian-specific
+  "site"/cloudId indirection) — not applicable, neither GitLab nor Bitbucket
+  needs an equivalent.
+- Agent-tool traits (`jira/traits`, `confluence/traits`, `github/traits`) —
+  confirmed still correctly out of scope (see "Deliberate scope decisions"
+  above).
+- `kickside.data:writable` sinks (`jira/sink`, `confluence/sink` — real
+  Atlassian can also *write* issues/pages via Data Sync) — confirmed
+  correctly absent; this module is read-only per eng-metrics SPEC.md
+  decision B0, not an oversight.
+- Test harness env-storage wiring (`test/env/_index.yaml` in the real
+  reference) — matches this module's own equivalent pattern already.
+- Empty `src/migrations/_index.yaml` namespace stub in real Atlassian —
+  vestigial (zero entries); not needed here since neither module owns SQL.
+
+Found and fixed:
+
+- **`wippy.yaml` was missing the top-level `type: plugin` field** — checked
+  all 20 provider modules in the reference monorepo, every single one
+  declares it. Added.
+- **The unnecessary `kickside/core` dependency** — see the corrected section
+  above.
+
+Flagged, not changed (a real decision, not a technical correctness issue):
+
+- **License.** Every real provider module in the reference monorepo uses
+  `BUSL-1.1`; this module still has the template's default `MIT`. Left
+  as-is — which license this repo ships under is the user's call, not
+  something to silently match to Wippy's own platform-module convention.
