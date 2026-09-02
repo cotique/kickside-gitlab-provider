@@ -1,0 +1,33 @@
+version: "1.0"
+# Strict security mode requires every process to carry an actor and scope.
+# The harness therefore depends on wippy/security (policy groups for
+# host-managed services) and on a wippy/test runner that declares
+# meta.command.security. `make setup` resolves the harness graph fresh with
+# `wippy update`, which picks up current releases of both; suites run with
+# `wippy test`.
+workspace:
+  replacements:
+    acme/starter: ..
+override:
+  "acme.starter.security:user_security_scope:data.default": app:user
+vars:
+  pg_host: localhost
+  pg_port: 5433
+  # <org>_test_<module> per docs/kickside-development/13-testing.md: harnesses
+  # from different orgs share one Postgres server without colliding. Older
+  # modules hardcode a kickside_test_ prefix; new modules use the org form.
+  pg_database: acme_test_starter
+  pg_username: kickside
+  pg_password: kickside
+profiles:
+  postgres:
+    override:
+      "app:db:kind": db.sql.postgres
+      "app:db:host": "${pg_host}"
+      "app:db:port": "${pg_port}"
+      "app:db:database": "${pg_database}"
+      "app:db:username": "${pg_username}"
+      "app:db:password": "${pg_password}"
+      "app:db:options.sslmode": disable
+      "app:db:pool.max_open": 16
+      "app:db:pool.max_idle": 8
