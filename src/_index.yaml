@@ -109,11 +109,12 @@ entries:
     kind: registry.entry
     meta:
       type: ui.nav_item
+      private: true
       section: ""
       path: /gitlab-provider
       route_name: gitlab-provider
       title: GitLab Connector
-      comment: GitLab connection provider and merge-request pull source status.
+      comment: GitLab connection provider and merge-request pull source status. No standalone page — reachable only via Connections' Connect-app flow.
       icon: tabler:brand-gitlab
       order: 90
       render: component
