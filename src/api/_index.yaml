@@ -1,21 +1,19 @@
 version: "1.0"
-namespace: acme.starter.api
+namespace: cotique.gitlab_provider.api
 
 entries:
-  # acme.starter.api:get_status
+  # cotique.gitlab_provider.api:get_status
   - name: get_status
     kind: function.lua
     meta:
-      comment: GET /starter/status — module identity and logged entry count for the starter page.
+      comment: GET /gitlab-provider/status — static module identity for the gitlab-provider page.
     source: file://get_status.lua
     method: handler
     modules:
       - http
       - security
-    imports:
-      repo: acme.starter.persist:repo
 
-  # acme.starter.api:get_status.endpoint
+  # cotique.gitlab_provider.api:get_status.endpoint
   - name: get_status.endpoint
     kind: http.endpoint
     meta:
@@ -23,4 +21,4 @@ entries:
       router: app:api
     method: GET
     func: get_status
-    path: /starter/status
+    path: /gitlab-provider/status

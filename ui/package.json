@@ -1,9 +1,9 @@
 {
-  "name": "@acme/starter-ui",
+  "name": "@cotique/gitlab-provider-ui",
   "version": "0.1.0",
   "specification": "wippy-component-1.0",
-  "title": "Acme Starter",
-  "description": "Starter page web component for the acme/starter module.",
+  "title": "GitLab Connector",
+  "description": "GitLab Connector page web component for the cotique/gitlab-provider module.",
   "browser": "dist/index.js",
   "files": [
     "dist/",
@@ -32,9 +32,9 @@
     "vue": "^3.5.0"
   },
   "wippy": {
-    "tagName": "acme-starter",
+    "tagName": "cotique-gitlab-provider",
     "type": "component",
-    "description": "Renders the acme/starter module status inside Kickside as a host-mounted web component. It accepts no props, loads its data through the authenticated Wippy proxy, and fills the host-provided content area using theme tokens that work in light and dark modes.",
+    "description": "Renders the cotique/gitlab-provider module status inside Kickside as a host-mounted web component. It accepts no props, loads its data through the authenticated Wippy proxy, and fills the host-provided content area using theme tokens that work in light and dark modes.",
     "props": {
       "type": "object",
       "properties": {}

@@ -155,22 +155,37 @@ conventional module `src/` tree.
 
 ## Included vertical slice
 
-The executable example is `acme/starter` until initialized:
+`cotique/gitlab-provider` is a read-only GitLab connection provider plus a
+merge-request pull source for Kickside Data Sync — never creates, updates,
+merges, comments on, approves, or labels anything:
 
-- `acme.starter:definition` is the authoritative root `ns.definition`.
-- `acme.starter:log` is a typed automation destination port.
-- `acme.starter:log_sink` binds the shared `kickside.data:writable` contract.
-- `acme.starter.sink:write` validates and persists one acknowledged write.
-- `acme.starter.persist:repo` owns SQL access.
-- `acme.starter.migrations:01_create_log_entries` supports SQLite and Postgres.
-- `acme.starter.api:get_status.endpoint` exposes authenticated module status.
-- `acme.starter:starter_view` publishes an announced, auto-registered Wippy
-  web component served by the module's own embedded filesystem.
-- `acme.starter.blocks:block.write_log` contributes the capability to the
-  headless Block catalog (`kickside.block/v1`) so Automations, Workflows, and
-  agents can compose it; `block_write_log` is its function implementation and
-  runs the same persistence path as the sink.
+- `cotique.gitlab_provider:definition` is the authoritative root `ns.definition`.
+- `cotique.gitlab_provider.connection:gitlab_connection` is the credential-only
+  `contract.binding` (personal/project access token, optional self-managed
+  `base_url`) implementing `kickside.connection:connection` +
+  `kickside.contract:component` + `kickside.contract:deletable`.
+- `cotique.gitlab_provider.connection:test_connection` / `:discover_resources`
+  make real, live GitLab API calls (`GET /user`, paginated `GET /projects`).
+- `cotique.gitlab_provider.client:api` / `:transport` / `:types` / `:output` /
+  `:data_error` are the low-level REST client layer — empirically-verified
+  pagination/auth mechanics, independently unit-tested.
+- `cotique.gitlab_provider.source:pull_core` is the real, tested merge-request
+  pagination + normalize logic; `:pull_items` is the thin
+  `kickside.data:pullable.pull` wrapper around it.
+- `cotique.gitlab_provider.source:project_mrs_source` implements
+  `kickside.data:pullable`; `cotique.gitlab_provider.source:project_mrs` is
+  the `kickside.automation.port` entry exposing it to Data Sync.
+- `cotique.gitlab_provider.api:get_status.endpoint` exposes authenticated
+  module status (this module owns no persistence of its own — Data Sync's
+  engine owns cursor/lease/schedule/dedup/id-map/sink routing).
+- `cotique.gitlab_provider:gitlab_provider_view` publishes an announced,
+  auto-registered Wippy web component served by the module's own embedded
+  filesystem.
 - `test/` supplies an isolated host and behavioral/wiring suites.
+
+See `BUILD-NOTES.md` for what's confirmed vs. inferred about the
+`kickside.data:pullable` contract's exact envelope, and for other build-time
+findings.
 
 Package identity (`organization/module`), registry namespace
 (`namespace:name`), and component instance IDs are different identities. Do

@@ -1,0 +1,107 @@
+version: "1.0"
+namespace: cotique.gitlab_provider.connection
+
+entries:
+  # cotique.gitlab_provider.connection:connection_lib
+  - name: connection_lib
+    kind: library.lua
+    meta:
+      comment: Shared connection helper — resolves component_id from ambient context and builds a configured GitLab API client for it.
+    source: file://connection_lib.lua
+    modules:
+      - ctx
+    imports:
+      transport: cotique.gitlab_provider.client:transport
+
+  # cotique.gitlab_provider.connection:get_status
+  - name: get_status
+    kind: function.lua
+    meta:
+      comment: kickside.connection:connection.get_status — delegates to the platform's base_connection boilerplate (component read-model, not a live probe). See file header for the base_connection export-shape caveat.
+    source: file://get_status.lua
+    modules: []
+    imports:
+      base_connection: kickside.connection:base_connection
+    method: get_status
+
+  # cotique.gitlab_provider.connection:delete
+  - name: delete
+    kind: function.lua
+    meta:
+      comment: kickside.contract:deletable.delete — delegates to the platform's base_connection boilerplate. See file header for the base_connection export-shape caveat.
+    source: file://delete.lua
+    modules: []
+    imports:
+      base_connection: kickside.connection:base_connection
+    method: delete
+
+  # cotique.gitlab_provider.connection:test_connection
+  - name: test_connection
+    kind: function.lua
+    meta:
+      comment: kickside.connection:connection.test_connection — GET /user proves the token is valid.
+    source: file://test_connection.lua
+    modules: []
+    imports:
+      connection_lib: cotique.gitlab_provider.connection:connection_lib
+    method: test_connection
+
+  # cotique.gitlab_provider.connection:discover_resources
+  - name: discover_resources
+    kind: function.lua
+    meta:
+      comment: kickside.connection:connection.discover_resources — lists accessible GitLab projects, normalized to {id,label,icon,parent_id,selectable,drillable}.
+    source: file://discover_resources.lua
+    modules: []
+    imports:
+      connection_lib: cotique.gitlab_provider.connection:connection_lib
+      api: cotique.gitlab_provider.client:api
+    method: discover_resources
+
+  # cotique.gitlab_provider.connection:gitlab_connection
+  # The canonical credential-only binding shape, per
+  # docs/kickside-development/04-connections-and-integrations.md's "Minimal
+  # Provider Example".
+  - name: gitlab_connection
+    kind: contract.binding
+    meta:
+      title: GitLab
+      icon: tabler:brand-gitlab
+      provider: gitlab
+      group: Developer
+      class:
+        - connection
+      # Read-only per eng-metrics SPEC.md decision B0 (see the shared build
+      # brief) — the help text on `token` requests the narrowest scope
+      # GitLab's own token model offers instead of relying on a broad
+      # default scope.
+      credential_schema:
+        version: "1.0"
+        submit_label: Connect
+        fields:
+          - key: token
+            label: Personal or project access token
+            type: password
+            required: true
+            placeholder: glpat-...
+            help: "Create a token (User Settings > Access Tokens, or Project Settings > Access Tokens for a project-scoped token) with only the read_api scope — do not grant the broader api scope."
+          - key: base_url
+            label: GitLab instance URL
+            type: text
+            required: false
+            placeholder: https://gitlab.com
+            help: "Leave blank for gitlab.com. Set this for a self-managed GitLab instance, e.g. https://gitlab.example.com."
+    contracts:
+      - contract: kickside.contract:component
+        methods:
+          get_status: cotique.gitlab_provider.connection:get_status
+      - contract: kickside.connection:connection
+        context_required: [component_id]
+        methods:
+          get_status: cotique.gitlab_provider.connection:get_status
+          test_connection: cotique.gitlab_provider.connection:test_connection
+          discover_resources: cotique.gitlab_provider.connection:discover_resources
+      - contract: kickside.contract:deletable
+        context_required: [component_id]
+        methods:
+          delete: cotique.gitlab_provider.connection:delete
