@@ -45,7 +45,7 @@ local function discover_resources()
             },
         })
         if rerr then
-            return { success = false, error = rerr.message }
+            return { success = false, error = rerr.error.message }
         end
 
         local items = resp.body

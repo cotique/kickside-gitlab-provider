@@ -23,6 +23,45 @@ local data_error = require("data_error")
 
 local M = {}
 
+-- GitLab typically returns {"message": "..."} on a non-2xx response (401s
+-- per the provider brief; validation errors on others) — extract it when
+-- present so the DataError's message surfaces GitLab's own explanation
+-- rather than a generic "HTTP 422" string.
+local function extract_message(body)
+    if type(body) ~= "string" or body == "" then
+        return nil
+    end
+    local decoded, derr = json.decode(body)
+    if derr or type(decoded) ~= "table" then
+        return nil
+    end
+    if type(decoded.message) == "string" then
+        return decoded.message
+    elseif type(decoded.message) == "table" then
+        -- GitLab sometimes returns message as an array/table of validation
+        -- errors; stringify defensively rather than dropping it.
+        local ok, encoded = pcall(json.encode, decoded.message)
+        return ok and encoded or "validation error"
+    elseif type(decoded.error) == "string" then
+        return decoded.error
+    end
+    return nil
+end
+
+-- Stringify an http_client transport-level failure (no HTTP response at
+-- all) defensively — it may be a plain string or an object exposing a
+-- :message() method.
+local function transport_message(err)
+    if err == nil then
+        return "GitLab request failed"
+    end
+    if type(err) == "table" and err.message then
+        local ok, m = pcall(function() return err:message() end)
+        return ok and m or tostring(err.message)
+    end
+    return tostring(err)
+end
+
 -- Case-insensitive header lookup. http_client's Go-side transport may
 -- canonicalize header casing (e.g. "X-Next-Page") differently than the
 -- lowercase form GitLab's own docs use ("x-next-page") — do not assume
@@ -50,11 +89,14 @@ function M.new(opts)
     -- GET path (relative to base_url, must start with "/") with optional
     -- { query = {...}, scope = "..." }. Returns
     --   { body = <decoded JSON>, headers = <response headers>, status_code = n }, nil
-    -- on success (2xx with a JSON body), or nil, <data_error envelope> on any
-    -- failure (transport failure, non-2xx, or a non-JSON 2xx body).
+    -- on success (2xx with a JSON body), or nil, <DataError envelope>
+    -- ({ success = false, error = { code, message, retriable, scope },
+    -- retry_after_ms? } — see client:data_error) on any failure (transport
+    -- failure, non-2xx, or a non-JSON 2xx body).
     function client.get(_, path, get_opts)
         get_opts = type(get_opts) == "table" and get_opts or {}
         local scope = type(get_opts.scope) == "string" and get_opts.scope or "request"
+        local action = "GitLab " .. scope .. " request"
         local headers = { ["PRIVATE-TOKEN"] = token }
         local url = base_url .. path
 
@@ -64,21 +106,25 @@ function M.new(opts)
             timeout = "30s",
         })
         if err then
-            return nil, data_error.from_transport(err, { scope = scope })
+            -- status_code = 0 signals "no HTTP response at all" to
+            -- data_error.from_result, which maps it the same as a 5xx:
+            -- provider_unavailable, always retriable.
+            return nil, data_error.from_result({ status_code = 0, error = transport_message(err) }, action)
         end
 
         if resp.status_code < 200 or resp.status_code >= 300 then
-            return nil, data_error.from_http(resp.status_code, resp.body, { scope = scope })
+            local message = extract_message(resp.body) or ("HTTP " .. tostring(resp.status_code))
+            return nil, data_error.from_result({ status_code = resp.status_code, error = message }, action)
         end
 
         local body = resp.body
         if type(body) ~= "string" then
-            return nil, data_error.envelope("invalid_response", "GitLab response had no body", false, scope)
+            return nil, data_error.failure("invalid_response", "GitLab response had no body", false, scope)
         end
 
         local decoded, derr = json.decode(body)
         if derr then
-            return nil, data_error.envelope(
+            return nil, data_error.failure(
                 "invalid_response",
                 "GitLab response was not valid JSON: " .. tostring(derr),
                 false,

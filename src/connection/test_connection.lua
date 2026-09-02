@@ -3,8 +3,9 @@
 -- Real live call per the provider brief: GET /api/v4/user — 200 with a JSON
 -- body containing at least id and username means the token is valid. Any
 -- non-2xx is a failed connection; surface GitLab's own error message where
--- present (client:data_error already extracts it from a {"message": "..."}
--- body).
+-- present (client:api already extracts it from a {"message": "..."} body
+-- and hands it to client:data_error, which nests it under rerr.error.message
+-- — see BUILD-NOTES.md, "kickside.data:pullable's exact envelope — RESOLVED").
 local connection_lib = require("connection_lib")
 
 local function test_connection()
@@ -15,7 +16,7 @@ local function test_connection()
 
     local resp, rerr = client:get("/user", { scope = "connection" })
     if rerr then
-        return { success = false, error = rerr.message }
+        return { success = false, error = rerr.error.message }
     end
 
     local body = resp.body

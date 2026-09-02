@@ -141,6 +141,27 @@ local function define_tests()
             test.not_nil(decl.output_schema, "port must declare output_schema for the normalized item shape")
             test.not_nil(decl.operations, "port must declare operations")
             test.not_nil(decl.operations.pull, "port must declare a pull operation")
+
+            -- reconcile.pull_keys is how Data Sync reconcile actually wires
+            -- a keys-only listing — sibling to binding:, NOT a second method
+            -- on the kickside.data:pullable contract.binding. Confirmed
+            -- against the real reference (kickside/github's repo_items
+            -- entry, kickside/atlassian's issues entry) — see
+            -- BUILD-NOTES.md, "kickside.data:pullable's exact envelope —
+            -- RESOLVED".
+            test.not_nil(decl.reconcile, "port must declare reconcile for Data Sync's keys-only reconcile hook")
+            test.eq(qualify(decl.reconcile.pull_keys, "cotique.gitlab_provider.source"), PULL_KEYS_ID)
+
+            -- connection_id is an explicit config_schema field, confirmed
+            -- against the real reference's identical shape (picker:
+            -- kickside-connection-trait-picker, role: primary, required:
+            -- true, provider: <slug>).
+            local connection_id_field = decl.config_schema.connection_id
+            test.not_nil(connection_id_field, "config_schema must declare an explicit connection_id field")
+            test.eq(connection_id_field.picker, "kickside-connection-trait-picker")
+            test.eq(connection_id_field.role, "primary")
+            test.eq(connection_id_field.required, true)
+            test.eq(connection_id_field.provider, "gitlab")
         end)
 
         test.it("pairs the status endpoint with its handler on the router token", function()

@@ -105,15 +105,125 @@ be unusable for a large fraction of real GitLab users.
 counterpart here. Out of explicit scope for this task per the shared build
 brief — noted here so it reads as a decision, not an oversight.
 
-## OPEN: `kickside.data:pullable`'s exact envelope
+## RESOLVED: `kickside.data:pullable`'s exact envelope
 
-We do **not** have access to `kickside.data:pullable`'s real Lua source or a
-working implementation of it. `kickside/github` (the reference module) ships
-as a packed Hub module — `wippy registry show <id> --json` returns
-`"data": null` for every entry in it; the Hub Structure/Bindings tabs
-surface only the same declared `meta`, never method bodies; the source repo
-`git.wippy.ai/kickside/providers` needs auth this checkout doesn't have.
-This is the exact same wall `cotique/eng-metrics` hit for
+**2026-09-02, later the same session:** real, unpacked source for
+`git.wippy.ai/kickside/providers` became available locally at
+`providers-master/providers-master/` (the `kickside/github` and
+`kickside/atlassian` monorepo this checkout previously could only see
+packed). Read directly (not summarized secondhand):
+
+- `providers-master/github/src/source/pull_core.lua` and
+  `pull_core_test.lua`
+- `providers-master/atlassian/src/jira/source/pull_core.lua` and
+  `pull_core_test.lua` (a second independent real example — Jira, not
+  GitHub — confirming the envelope is a platform-wide contract, not a
+  GitHub idiosyncrasy)
+- `providers-master/github/src/client/data_error.lua`
+- `providers-master/github/src/source/_index.yaml` and
+  `providers-master/atlassian/src/jira/source/_index.yaml`
+- `providers-master/atlassian/test/pullable_conformance.lua` and
+  `providers-master/atlassian/test/_index.yaml`
+
+This section originally read "OPEN" and documented the envelope below as
+INFERRED BY ANALOGY to `kickside.data:writable.write`. That inference was
+**wrong in several concrete ways**, now corrected against real ground
+truth:
+
+1. **Items are wrapped, not flat.** Every item in `pull`'s response is
+   `{ item_key, dedup_key, op = "upsert"|"delete", source_version,
+   occurred_at, payload = <the normalized record> }` — not a bare
+   normalized record. `payload.url` is `payload.source_url` in both real
+   references' platform-wide payload convention.
+2. **The cursor is a table, never a bare string.** `{ page = N, since =
+   "..." }` here (GitHub's real cursor is the simpler analogue of Jira's
+   more explicit `{ phase, start_at, hw }` two-phase design — GitHub's
+   shape was mirrored since our own pagination is GitHub-page-shaped, not
+   JQL-offset-shaped).
+3. **`next_cursor` is set on every successful response, has_more true or
+   false — never nil on success.** On exhaustion it resets to a fresh
+   resumable position (`{ page = 1, since = <max updated_at seen this
+   pull> }`), not `nil`, so a scheduler can keep polling forever.
+4. **`pull_keys` is wired via the port's `reconcile:` field, not a second
+   contract method.** This checkout had already found empirically (see the
+   git-blame'd history of this section, and the contract-binding validator
+   error quoted below) that `kickside.data:pullable` binds only `pull` —
+   that part was already correct. What was still open was *where*
+   `pull_keys` actually gets invoked from. Now confirmed: the
+   `kickside.automation.port` registry entry (`project_mrs` here) declares
+   `reconcile: { pull_keys: <entry id> }`, a field sibling to `binding:` —
+   copied exactly from `kickside/github`'s `repo_items` port entry and
+   `kickside/atlassian`'s `issues` port entry, which both use this same
+   shape.
+5. **`context_required: [component_id]` on the pullable
+   `contract.binding`, previously "inferred by analogy," is independently
+   confirmed correct** — `kickside/github`'s real
+   `repo_items_source` binding declares this exact field. (`kickside/atlassian`'s
+   Jira binding omits it, so the two real references disagree with each
+   other here; this module already had it and more closely mirrors
+   GitHub's shape overall, so it was kept.)
+6. **Client/component_id resolution has a documented fallback chain**:
+   `deps.component_id -> ctx.get("component_id") -> config.connection_id`
+   (GitHub's real order; Jira's real order differs — `deps.component_id ->
+   config.connection_id -> ctx.get(...)` — the two real references disagree
+   with each other on ordering too, so GitHub's order was picked since this
+   module already mirrors GitHub's shape overall). Implemented in
+   `src/source/pull_core.lua`'s `resolve_client`, unit-tested directly
+   against a fake `deps.transport` (`test/src/pull_core_test.lua`).
+7. **The DataError taxonomy has a confirmed real function surface**:
+   `M.failure(code, message, retriable, scope, retry_after_ms)`,
+   `M.connection(message)`, `M.invalid_config(message)`, `M.from_result(result,
+   action)` — copied from `providers-master/github/src/client/data_error.lua`
+   into `src/client/data_error.lua`. The failure envelope itself is now
+   `{ success = false, error = { code, message, retriable, scope },
+   retry_after_ms? }` (previously a *bare* `{ code, message, retriable,
+   scope }` table that callers wrapped themselves) — every call site
+   (`client/api.lua`, `source/pull_core.lua`, `source/pull_items.lua`,
+   `source/pull_keys.lua`, `connection/test_connection.lua`,
+   `connection/discover_resources.lua`) was updated accordingly. This is
+   the one place the fix touched files outside `source/`,
+   `client/data_error.lua`, and `source/_index.yaml`: `client/api.lua`'s
+   two `client:get()` failure branches now build their DataError through
+   `data_error.from_result`/`data_error.failure` instead of the removed
+   `from_http`/`from_transport`/`envelope` functions, and
+   `test_connection.lua`/`discover_resources.lua` read `rerr.error.message`
+   instead of `rerr.message` since the value they get back is now the full
+   wrapped envelope, not a bare error table. None of `client/api.lua`'s
+   actual HTTP/auth logic (headers, pagination header parsing, retry
+   semantics) changed — only its error-construction call sites, forced by
+   the data_error rewrite.
+
+**What was NOT changed, confirmed still correct:** `connection/` (the
+connection binding itself), `client/transport.lua`, `discover_resources`'s
+and `test_connection`'s actual HTTP calls, and the `credential_schema` — all
+independently confirmed correct against
+`providers-master/github/src/connection/_index.yaml` and
+`providers-master/github/src/client/transport.lua`.
+
+**Verification — the pullable conformance kit, not just inspection.**
+`providers-master/atlassian/test/pullable_conformance.lua` was copied
+verbatim into `test/src/pullable_conformance.lua` and registered in
+`test/src/_index.yaml` exactly as `providers-master/atlassian/test/_index.yaml`
+registers it (`library.lua`, `modules: [registry, json]`). It works by
+calling `registry.get("kickside.data:pullable")` **at test time** to load
+the real, live JSON schema for `pull`'s output from this module's own real
+`kickside/core` dependency, and validates actual `pull()`/`pull_keys()`
+pages against it — the definitive check, not inspection-by-analogy.
+`test/src/pull_core_test.lua`'s `"passes the pullable conformance kit
+offline"` test runs it against a fake `client:api` + fake `transport`, no
+real network call, and passes. `make verify` and `make test-pg` both pass
+end to end (37/37 test cases each; see the bottom of this file for the
+`make verify` tail and `test-pg` port note).
+
+### Historical context (why this was open, kept for the record)
+
+We did not originally have access to `kickside.data:pullable`'s real Lua
+source or a working implementation of it. `kickside/github` (the reference
+module) ships as a packed Hub module — `wippy registry show <id> --json`
+returns `"data": null` for every entry in it; the Hub Structure/Bindings
+tabs surface only the same declared `meta`, never method bodies; the source
+repo `git.wippy.ai/kickside/providers` needed auth this checkout didn't
+have. This was the exact same wall `cotique/eng-metrics` hit for
 `kickside.atlassian.jira:api` (its own `docs/BUILD-NOTES.md` #3a/#3b).
 
 **What is CONFIRMED** (via `wippy registry show kickside.data:pullable --json`
@@ -200,7 +310,8 @@ booted host with `kickside/github` installed unpacked (this session's
 `kickside-host` sidecar could not get far enough to expose that — see
 "Adjacent: bootstrapping a bare `kickside/kickside` host" below, for
 completeness, though this was not pursued further given the alternate path
-already worked).
+already worked). **This is what happened** — see the "RESOLVED" section
+above.
 
 ## Secondary open item: `base_connection`'s exact export shape
 
@@ -471,6 +582,31 @@ published, not something introduced by either consuming module.
 `wippy lint --ns "cotique.gitlab_provider.*"`, matching the established
 practice from the `eng-metrics` precedent.
 
+### 7. Same type-checker strictness as #3/#4, hit again rewriting
+`source/pull_core.lua` for the corrected pullable envelope (resolved)
+
+`wippy lint` failed on the rewritten `pull_core.lua` with
+`argument 1: expected {...}, got any` at the `decode_cursor(req.cursor)`
+call site: the checker infers `decode_cursor`'s parameter as a specific
+table shape from how the function body indexes it (`cursor.page`,
+`cursor.since`), then rejects passing it an untyped (`any`) value — and
+`req.cursor`, reached through an unannotated `req` parameter, is `any` by
+default. A second, related error (`not enough arguments`) showed up at
+`pull_items.lua`/`pull_keys.lua`'s `pull_core.resolve_client(config)` call
+sites once `resolve_client`'s `deps` parameter was explicitly typed `any`
+without a `?` — the checker then required it at every call site, including
+the ones that legitimately omit it in production.
+
+**Fix:** added explicit Luau type annotations (`: any`, `: any?` for the
+optional `deps` parameter) to `decode_cursor`, `walk`, `config_value`, and
+`resolve_client` in `source/pull_core.lua` — matching the real reference
+implementations' own convention of typing loosely-shaped request/config/
+deps parameters as `any` throughout
+(`providers-master/github/src/source/pull_core.lua`,
+`providers-master/atlassian/src/jira/source/pull_core.lua` both do this
+extensively). `wippy lint --ns "cotique.gitlab_provider.*"` passes clean
+after.
+
 ## Deliverable checklist status
 
 - [x] `wippy.yaml` — `description` rewritten; `repository:` fixed (was
@@ -480,13 +616,30 @@ practice from the `eng-metrics` precedent.
       `make init` gets wrong, not because it was independently noticed).
 - [x] `src/` implements the structure above.
 - [x] `test/` — colocated-in-harness tests (per finding below on why they
-      live in `test/src/`, not `src/*/`) + wiring suite, 29/29 cases passing
-      on both SQLite (`make verify`'s `test` target) and Postgres
-      (`make test-pg`, run against the shared local `wippy-postgres`
-      instance on port 5432 — port 5433, `compose.test.yaml`'s own default,
-      was already occupied by an unrelated project's container on this
-      machine, same situation as `eng-metrics` BUILD-NOTES #9).
-- [x] `BUILD-NOTES.md` at the repo root (this file).
+      live in `test/src/`, not `src/*/`) + wiring suite + the pullable
+      conformance kit, 37/37 cases passing on both SQLite (`make verify`'s
+      `test` target) and Postgres. **`make test-pg` update (2026-09-02, the
+      pullable-envelope-correction session):** the literal `make test-pg`
+      (no override, `compose.test.yaml`'s own port 5433) passed 37/37
+      cleanly this run — the module's own test suites never touch
+      persistence directly (`pull_core_test` uses a fake `client:api`;
+      `wiring_test` only reads static registry entries), so nothing in this
+      pass actually exercises whichever Postgres `app:db` resolves to at
+      boot closely enough to distinguish "connected to the right database"
+      from "connected to some Postgres." `make postgres-up` itself still
+      fails on this machine with port 5433 already bound by an unrelated
+      project's container (`job-search-ai-postgres-1`) — same situation as
+      `eng-metrics` BUILD-NOTES #9 — so this was cross-checked by also
+      running `wippy test --profile postgres --set vars.pg_port=5432`
+      against the shared local `wippy-postgres` instance (which does have a
+      real `cotique_test_gitlab_provider` / `kickside` database from prior
+      sessions): also 37/37, identical output. Both ways green; the
+      Makefile/compose port itself was not changed (CI presumably has 5433
+      free, this is purely a local-machine conflict).
+- [x] `BUILD-NOTES.md` at the repo root (this file) — the
+      `kickside.data:pullable` envelope open item and the `pull_keys`
+      wiring open item are marked RESOLVED, citing the real source files by
+      local path (see the "RESOLVED" section above).
 - [ ] `git add` + local commit — done as the last step of this session, no
       push.
 

@@ -1,80 +1,75 @@
--- Maps HTTP/transport-level failures onto the { code, message, retriable,
--- scope } error envelope. This shape is CONFIRMED, not inferred — it is the
--- failure envelope of the real, unpacked kickside.data:writable.write
--- reference (the template scaffold's src/sink/write.lua before it was
--- removed; see BUILD-NOTES.md and the shared build brief). pull_core reuses
--- it verbatim for its own failures so both the (confirmed) write-side shape
--- and the (inferred, see source/pull_items.lua) read-side envelope agree on
--- how an error looks.
+-- Maps HTTP/transport/config-level failures onto the kickside.data DataError
+-- envelope: { success = false, error = { code, message, retriable, scope },
+-- retry_after_ms? }. This shape and function surface (M.failure, M.connection,
+-- M.invalid_config, M.from_result) are CONFIRMED, not inferred — copied
+-- verbatim in spirit from the real, unpacked reference implementation:
+--   providers-master/github/src/client/data_error.lua
+-- and cross-checked against kickside/atlassian's own error handling, which
+-- calls the identically-named M.connection/M.invalid_config/M.from_result
+-- helpers from kickside.atlassian.jira.source:pull_core (see
+-- providers-master/atlassian/src/jira/source/pull_core.lua). See
+-- BUILD-NOTES.md, "kickside.data:pullable's exact envelope — RESOLVED".
+--
+-- Earlier revision of this file exposed a different surface (M.envelope,
+-- M.from_http, M.from_transport) returning a *bare* { code, message,
+-- retriable, scope } table, inferred by analogy rather than confirmed. That
+-- surface is gone; every call site (client/api.lua, source/pull_core.lua,
+-- connection/test_connection.lua, connection/discover_resources.lua) has
+-- been updated to the shape below.
 local M = {}
 
--- One error envelope, always `{ code, message, retriable, scope }`.
-local function envelope(code, message, retriable, scope)
-    return {
-        code = code,
-        message = tostring(message),
-        retriable = retriable == true,
-        scope = scope or "request",
+-- One full pullable-contract failure envelope.
+local function failure(code, message, retriable, scope, retry_after_ms)
+    local out = {
+        success = false,
+        error = {
+            code = code,
+            message = tostring(message),
+            retriable = retriable == true,
+            scope = scope,
+        },
     }
+    if retry_after_ms ~= nil then
+        out.retry_after_ms = retry_after_ms
+    end
+    return out
+end
+M.failure = failure
+
+-- A revoked/expired/unresolvable connection component.
+function M.connection(message)
+    return failure("auth_expired", message, false, "connection")
 end
 
-M.envelope = envelope
-
--- Map a GitLab API non-2xx HTTP response onto the envelope. `body` is the
--- raw response body string; GitLab typically returns `{"message": "..."}` on
--- 401s (per the provider brief) — surface that when present.
-function M.from_http(status, body, opts)
-    opts = opts or {}
-    local scope = opts.scope or "request"
-
-    local api_message
-    if type(body) == "string" and body ~= "" then
-        local json = require("json")
-        local decoded, derr = json.decode(body)
-        if not derr and type(decoded) == "table" then
-            if type(decoded.message) == "string" then
-                api_message = decoded.message
-            elseif type(decoded.message) == "table" then
-                -- GitLab sometimes returns message as an array/table of
-                -- validation errors; stringify defensively rather than
-                -- dropping it.
-                local ok, encoded = pcall(json.encode, decoded.message)
-                api_message = ok and encoded or "validation error"
-            elseif type(decoded.error) == "string" then
-                api_message = decoded.error
-            end
-        end
-    end
-
-    if status == 401 or status == 403 then
-        return envelope("unauthorized", api_message or ("GitLab request unauthorized (HTTP " .. tostring(status) .. ")"), false, scope)
-    elseif status == 404 then
-        return envelope("not_found", api_message or "GitLab resource not found", false, scope)
-    elseif status == 429 then
-        return envelope("rate_limited", api_message or "GitLab rate limit exceeded", true, scope)
-    elseif type(status) == "number" and status >= 500 then
-        return envelope("provider_unavailable", api_message or ("GitLab server error (HTTP " .. tostring(status) .. ")"), true, scope)
-    else
-        return envelope("invalid_request", api_message or ("GitLab request failed (HTTP " .. tostring(status) .. ")"), false, scope)
-    end
+-- A structurally invalid config (missing/malformed required field).
+function M.invalid_config(message)
+    return failure("invalid_config", message, false, "flow")
 end
 
--- Map a transport-level failure (DNS, TLS, timeout, connection reset — no
--- HTTP response at all) onto the envelope. Always retriable: none of these
--- indicate a malformed request, only that this attempt didn't reach GitLab.
-function M.from_transport(err, opts)
-    opts = opts or {}
-    local scope = opts.scope or "request"
-    local message = "GitLab request failed"
-    if err ~= nil then
-        if type(err) == "table" and err.message then
-            local ok, m = pcall(function() return err:message() end)
-            message = ok and m or tostring(err.message)
-        else
-            message = tostring(err)
-        end
+-- Map a client-result-shaped table ({ status_code, error, retry_after_ms? })
+-- onto the taxonomy above. `result.status_code = 0` means "no HTTP response
+-- at all" (transport-level failure: DNS, TLS, timeout, connection reset) —
+-- always mapped to provider_unavailable, same as a real 5xx.
+function M.from_result(result, action)
+    local r = type(result) == "table" and result or {}
+    local status = tonumber(r.status_code) or 0
+    local message = tostring(action) .. ": " .. tostring(r.error or "request failed")
+    if status == 429 then
+        return failure("rate_limited", message, true, "provider", tonumber(r.retry_after_ms) or 1000)
     end
-    return envelope("provider_unavailable", message, true, scope)
+    if status == 401 then
+        return failure("auth_expired", message, false, "connection")
+    end
+    if status == 403 then
+        return failure("permission_denied", message, false, "flow")
+    end
+    if status == 404 then
+        return failure("not_found", message, false, "flow")
+    end
+    if status >= 500 or status == 0 then
+        return failure("provider_unavailable", message, true, "provider")
+    end
+    return failure("provider_error", message, true, "provider")
 end
 
 return M

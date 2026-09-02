@@ -64,13 +64,28 @@ entries:
       data_error: cotique.gitlab_provider.client:data_error
     method: run
 
+  # Harness-local copy of kickside.automation.testing:pullable_conformance,
+  # copied verbatim from the real, unpacked reference
+  # (providers-master/atlassian/test/pullable_conformance.lua) per
+  # BUILD-NOTES.md. Generic, provider-agnostic — validates a pull()/
+  # pull_keys() implementation's actual pages against the REAL, live
+  # kickside.data:pullable schema loaded from the registry at test time.
+  - name: pullable_conformance
+    kind: library.lua
+    meta:
+      comment: Harness-local copy of kickside.automation.testing:pullable_conformance for provider source conformance tests.
+    source: file://pullable_conformance.lua
+    modules: [registry, json]
+
   # cotique.gitlab_provider.source:pull_core's unit tests — the real,
-  # pagination + normalization logic, tested against a fake client:api.
+  # pagination + normalization logic, tested against a fake client:api — plus
+  # the pullable conformance kit run offline against a fake client (see
+  # pullable_conformance above).
   - name: pull_core_test
     kind: function.lua
     meta:
       type: test
-      comment: Pagination walk (multi-page, stop-on-exhaustion, per-call cap + resumable cursor), field normalization, and stable-key generation against a fake client:api — no real network call.
+      comment: Pagination walk (multi-page, stop-on-exhaustion, per-call cap + resumable cursor), item envelope, table cursor, field normalization, stable-key generation, and component_id fallback chain against a fake client:api — no real network call. Also runs the pullable conformance kit offline.
       group: GitLab Connector
       suite: cotique_gitlab_provider
     source: file://pull_core_test.lua
@@ -78,6 +93,7 @@ entries:
     imports:
       test: wippy.test:test
       pull_core: cotique.gitlab_provider.source:pull_core
+      conformance: app:pullable_conformance
     method: run
 
   - name: db
