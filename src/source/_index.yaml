@@ -133,22 +133,41 @@ entries:
         description: Optional ISO timestamp. Only merge requests updated at or after this time are emitted.
         required: false
         picker: wc-schema-form
+    # Describes the FULL pullable item envelope M.pull actually emits
+    # (item_key/dedup_key/op/source_version/occurred_at/payload), not just
+    # the payload's own fields — matching the real
+    # kickside.atlassian.jira.source:issues port's output_schema shape
+    # (providers-master/atlassian/src/jira/source/_index.yaml, local
+    # unpacked copy of git.wippy.ai/kickside/providers). An earlier version
+    # of this schema described only the payload fields, missing the
+    # envelope wrapper — fixed here for consistency with the real reference.
     output_schema: |
       { "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "id": { "type": "string", "description": "Provider-native merge request id." },
-          "title": { "type": "string" },
-          "state": { "type": "string", "enum": ["open", "merged", "closed"] },
-          "author": { "type": ["string", "null"] },
-          "source_branch": { "type": ["string", "null"] },
-          "target_branch": { "type": ["string", "null"] },
-          "created_at": { "type": ["string", "null"], "description": "ISO 8601, as returned by the API." },
-          "updated_at": { "type": ["string", "null"] },
-          "merged_at": { "type": ["string", "null"] },
-          "source_url": { "type": ["string", "null"], "description": "Web (html) URL." },
-          "raw": { "type": "object", "description": "The original GitLab API item, untouched." }
+          "item_key": { "type": "string", "description": "Stable item identity, gitlab:<project_id>:mr:<iid>." },
+          "dedup_key": { "type": "string", "description": "Delivery idempotency key including op and source_version." },
+          "op": { "type": "string", "enum": ["upsert"] },
+          "source_version": { "type": ["string", "null"], "description": "GitLab updated_at timestamp used for ordering and deduplication." },
+          "occurred_at": { "type": ["string", "null"] },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "description": "Provider-native merge request id." },
+              "title": { "type": "string" },
+              "state": { "type": "string", "enum": ["open", "merged", "closed"] },
+              "author": { "type": ["string", "null"] },
+              "source_branch": { "type": ["string", "null"] },
+              "target_branch": { "type": ["string", "null"] },
+              "created_at": { "type": ["string", "null"], "description": "ISO 8601, as returned by the API." },
+              "updated_at": { "type": ["string", "null"] },
+              "merged_at": { "type": ["string", "null"] },
+              "source_url": { "type": ["string", "null"], "description": "Web (html) URL." },
+              "raw": { "type": "object", "description": "The original GitLab API item, untouched." }
+            },
+            "required": ["id", "title", "state", "source_url", "raw"]
+          }
         },
-        "required": ["id", "title", "state", "source_url", "raw"] }
+        "required": ["item_key", "dedup_key", "op"] }
     operations:
       pull: {}
