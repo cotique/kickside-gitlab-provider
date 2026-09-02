@@ -1,2 +1,2 @@
-// No host-driven props: the starter page fetches its own data.
+// No host-driven props: the gitlab-provider page fetches its own data.
 export interface ComponentProps {}

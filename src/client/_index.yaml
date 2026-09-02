@@ -1,0 +1,61 @@
+version: "1.0"
+namespace: cotique.gitlab_provider.client
+
+entries:
+  # cotique.gitlab_provider.client:types
+  - name: types
+    kind: library.lua
+    meta:
+      comment: Shared constants — default base URL, GitLab MR state mapping.
+    source: file://types.lua
+    modules: []
+
+  # cotique.gitlab_provider.client:output
+  - name: output
+    kind: library.lua
+    meta:
+      comment: Safe output encoding — redacts token/base_url-adjacent secrets from anything that could be logged.
+    source: file://output.lua
+    modules: []
+
+  # cotique.gitlab_provider.client:data_error
+  - name: data_error
+    kind: library.lua
+    meta:
+      comment: Maps HTTP/transport errors onto the { code, message, retriable, scope } envelope shape confirmed by the writable sink reference (src/sink/write.lua in the template scaffold this module started from).
+    source: file://data_error.lua
+    modules:
+      - json
+
+  # cotique.gitlab_provider.client:api
+  - name: api
+    kind: library.lua
+    meta:
+      comment: Low-level GitLab REST client — builds requests, sets the PRIVATE-TOKEN header, parses JSON, maps non-2xx/transport failures through data_error.
+    source: file://api.lua
+    modules:
+      - http_client
+      - json
+    imports:
+      data_error: cotique.gitlab_provider.client:data_error
+
+  # cotique.gitlab_provider.client:transport
+  - name: transport
+    kind: library.lua
+    meta:
+      comment: Actor-scoped resolver — given a connection component_id, loads private_context (component.get_private_context) and hands back a configured client:api instance.
+    source: file://transport.lua
+    modules: []
+    imports:
+      component: kickside.component:component
+      api: cotique.gitlab_provider.client:api
+      types: cotique.gitlab_provider.client:types
+
+  # Unit tests for this namespace's libraries (output, data_error) live in
+  # the standalone harness (test/src/output_test.lua, test/src/data_error_test.lua),
+  # not colocated in this src/ tree. This module's own exclude_meta:
+  # type: [test] in wippy.yaml also strips meta.type: test entries when the
+  # module is loaded via the harness's workspace replacement (not just at
+  # publish time) — see BUILD-NOTES.md for the empirical confirmation and
+  # why the harness (which is excluded from publish outright) is the only
+  # place a meta.type: test entry actually gets discovered by `wippy test`.

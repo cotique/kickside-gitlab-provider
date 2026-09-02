@@ -1,60 +1,89 @@
 version: "1.0"
 namespace: app
 
-# Standalone harness for acme/starter. Provides the host resources the boot
-# needs (app:db, app:processes, gateway + api router, env storage, a
-# permissive actor scope) and wires them through wippy/bootloader so the
-# co-located *_test.lua suites run in isolation. The router and gateway exist
-# only so the endpoint and static entries resolve; the HTTP and UI surfaces
-# are covered by the registry-shape suite, not exercised over HTTP.
+# Standalone harness for cotique/gitlab-provider. This module owns no
+# migrations/persistence of its own (kickside.data:pullable's own doc
+# comment: "Engine owns cursor, lease, schedule, dedup, id-map, and sink
+# routing" — see BUILD-NOTES.md). app:db is still provided here because the
+# module's own dependencies (kickside/component, kickside/connection,
+# kickside/core) are components/persistence-backed and need a real database
+# resource wired through bootloader parameters to boot at all — see 13-testing.md
+# "Kickside module requirements have no usable defaults in a standalone
+# harness."
 # Harness-only; excluded from publish via the module wippy.yaml.
 
 entries:
   - name: definition
     kind: ns.definition
-    meta: { title: Starter Test Harness }
-
-  - name: wait_for_boot
-    kind: function.lua
-    meta:
-      type: test
-      suite: "00_setup"
-      comment: Waits for the acme_starter_log_entries migration to land on app:db before the suites run.
-    source: file://wait_for_boot.lua
-    modules: [sql, time]
-    method: run
-
-  - name: log_test
-    kind: function.lua
-    meta:
-      type: test
-      comment: Log sink publishes its port, persists rows, and acknowledges writes.
-      group: Acme Starter
-      suite: acme_starter
-    source: file://log_test.lua
-    modules: [funcs, registry, security]
-    imports:
-      test: wippy.test:test
-      repo: acme.starter.persist:repo
-    method: run
+    meta: { title: GitLab Connector Test Harness }
 
   - name: wiring_test
     kind: function.lua
     meta:
       type: test
-      comment: Endpoint, view, nav, and security entries exist and reference each other consistently.
-      group: Acme Starter
-      suite: acme_starter
+      comment: Connection binding, pull source, endpoint, view, nav, and security entries exist and reference each other consistently.
+      group: GitLab Connector
+      suite: cotique_gitlab_provider
     source: file://wiring_test.lua
     modules: [registry]
     imports:
       test: wippy.test:test
     method: run
 
+  # cotique.gitlab_provider.client:output's unit tests. Colocated in this
+  # harness rather than in the module's own src/ tree — the module's
+  # exclude_meta: type: [test] strips meta.type: test entries even when
+  # loaded via workspace replacement, not just at publish time (see
+  # BUILD-NOTES.md).
+  - name: output_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: Credential redaction actually redacts known-sensitive keys, nested and case-insensitively, without mutating the input.
+      group: GitLab Connector
+      suite: cotique_gitlab_provider
+    source: file://output_test.lua
+    modules: []
+    imports:
+      test: wippy.test:test
+      output: cotique.gitlab_provider.client:output
+    method: run
+
+  # cotique.gitlab_provider.client:data_error's unit tests.
+  - name: data_error_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: HTTP/transport failures map onto the confirmed { code, message, retriable, scope } envelope shape.
+      group: GitLab Connector
+      suite: cotique_gitlab_provider
+    source: file://data_error_test.lua
+    modules: []
+    imports:
+      test: wippy.test:test
+      data_error: cotique.gitlab_provider.client:data_error
+    method: run
+
+  # cotique.gitlab_provider.source:pull_core's unit tests — the real,
+  # pagination + normalization logic, tested against a fake client:api.
+  - name: pull_core_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: Pagination walk (multi-page, stop-on-exhaustion, per-call cap + resumable cursor), field normalization, and stable-key generation against a fake client:api — no real network call.
+      group: GitLab Connector
+      suite: cotique_gitlab_provider
+    source: file://pull_core_test.lua
+    modules: []
+    imports:
+      test: wippy.test:test
+      pull_core: cotique.gitlab_provider.source:pull_core
+    method: run
+
   - name: db
     kind: db.sql.sqlite
     meta:
-      comment: In-memory database for the starter suites.
+      comment: In-memory database for the transitive kickside/component + kickside/connection dependencies.
     file: ":memory:"
 
   - name: env_storage
@@ -69,11 +98,29 @@ entries:
     lifecycle:
       auto_start: true
 
+  # kickside.core.jobs:temp_fs — the jobs subsystem's scratch directory
+  # requirement. Not exercised by any suite here, but boot fails closed
+  # without a real fs.directory wired.
+  - name: temp_fs
+    kind: fs.directory
+    meta:
+      comment: Scratch directory for the transitive kickside/core jobs subsystem.
+    directory: ./.wippy/tmp
+    auto_init: true
+
+  # kickside.uploads:storage_id — kickside/uploads is a further transitive
+  # dependency (pulled in by kickside/core), not something this module needs
+  # conceptually; wired only so the harness boots.
+  - name: storage
+    kind: store.memory
+    meta:
+      comment: In-memory blob storage for the transitive kickside/uploads dependency.
+
   # The endpoint and static entries resolve against these resources at boot;
   # no suite calls them over HTTP — the wiring suite checks registry shape.
   - name: gateway
     kind: http.service
-    addr: :19219
+    addr: :19229
     lifecycle:
       auto_start: true
 
@@ -93,34 +140,176 @@ entries:
       effect: allow
 
   # The harness source is the lock root. Its .wippy.yaml replaces the declared
-  # acme/starter dependency with ../ so the module's canonical source and
+  # cotique/gitlab-provider dependency with ../ so the module's canonical source and
   # colocated tests load directly without a lock-file replacement.
 
-  - name: starter_harness.dep.migration
-    version: "*"
-    kind: ns.dependency
-    meta:
-      comment: Host binding for the migration dependency used by the module under test.
-    component: "wippy/migration"
-    parameters:
-      - name: wippy.migration:app_db
-        value: app:db
-
-  - name: starter_harness.dep.contract
+  - name: gitlab_provider_harness.dep.contract
     version: "*"
     kind: ns.dependency
     meta:
       comment: Shared contract definitions imported by the replacement module under test.
     component: "kickside/contract"
 
-  - name: starter_harness.dep.security
+  - name: gitlab_provider_harness.dep.component
+    version: "*"
+    kind: ns.dependency
+    meta:
+      comment: kickside.component:component client library used by client:transport to read connection private_context. lifecycle_impl deliberately left unwired — the harness's tests never exercise real component create/delete lifecycle (pull_core is tested against a fake client; wiring_test only reads static registry entries), so the package-owned fail-closed default is fine here.
+    component: "kickside/component"
+    parameters:
+      - name: kickside.component:target_db
+        value: app:db
+      - name: kickside.component:api_router
+        value: app:api
+      - name: kickside.component.security:user_security_scope
+        value: app:user
+
+  - name: gitlab_provider_harness.dep.connection
+    version: "*"
+    kind: ns.dependency
+    meta:
+      comment: kickside.connection:connection contract + base_connection boilerplate the connection binding implements. Ships its own admin UI/API, so ui_server/api_router need explicit wiring (same category as kickside/settings in the sibling cotique/eng-metrics module — see BUILD-NOTES.md).
+    component: "kickside/connection"
+    parameters:
+      - name: kickside.connection:api_router
+        value: app:api
+      - name: kickside.connection:ui_server
+        value: app:gateway
+      - name: kickside.connection.security:user_security_scope
+        value: app:user
+
+  # kickside/core is a large transitive dependency (jobs, lifecycle,
+  # projections, retention, scheduler, threads, threads.hydration
+  # sub-namespaces) whose every ns.requirement needs explicit wiring in a
+  # standalone harness, per 13-testing.md's "Kickside module requirements
+  # have no usable defaults in a standalone harness." Discovered via
+  # `wippy registry list --ns "kickside.core*"` (packed module: `wippy
+  # registry show` cannot reveal each requirement's actual default, so this
+  # list was confirmed empirically by iterating `wippy test` until boot
+  # passed — see BUILD-NOTES.md).
+  - name: gitlab_provider_harness.dep.core
+    version: "*"
+    kind: ns.dependency
+    meta:
+      comment: kickside.data:pullable contract definition the pull source implements, plus the full transitive kickside/core engine (threads/events/projections/jobs/lifecycle/retention/scheduler) it drags in.
+    component: "kickside/core"
+    parameters:
+      - name: kickside.core:target_db
+        value: app:db
+      - name: kickside.core.jobs:api_router
+        value: app:api
+      - name: kickside.core.jobs:process_host
+        value: app:processes
+      - name: kickside.core.jobs:target_db
+        value: app:db
+      - name: kickside.core.jobs:temp_fs
+        value: app:temp_fs
+      - name: kickside.core.jobs.security:user_security_scope
+        value: app:user
+      - name: kickside.core.lifecycle:process_host
+        value: app:processes
+      - name: kickside.core.lifecycle:admin_lifecycle_grant
+        value: app:user
+      - name: kickside.core.lifecycle:user_lifecycle_grant
+        value: app:user
+      - name: kickside.core.projections:api_router
+        value: app:api
+      - name: kickside.core.projections:env_storage
+        value: app:env_storage
+      - name: kickside.core.projections:process_host
+        value: app:processes
+      - name: kickside.core.retention:api_router
+        value: app:api
+      - name: kickside.core.retention:env_storage
+        value: app:env_storage
+      - name: kickside.core.retention:process_host
+        value: app:processes
+      - name: kickside.core.retention:user_security_scope
+        value: app:user
+      - name: kickside.core.scheduler:env_storage
+        value: app:env_storage
+      - name: kickside.core.scheduler:process_host
+        value: app:processes
+      - name: kickside.core.security:user_security_scope
+        value: app:user
+      - name: kickside.core.threads:api_router
+        value: app:api
+      - name: kickside.core.threads:process_host
+        value: app:processes
+      - name: kickside.core.threads:user_security_scope
+        value: app:user
+      - name: kickside.core.threads.hydration:api_router
+        value: app:api
+      - name: kickside.core.threads.hydration:user_security_scope
+        value: app:user
+
+  # kickside/uploads — further transitive dependency (pulled in by
+  # kickside/core), not something this module needs conceptually; wired only
+  # so the harness boots. See BUILD-NOTES.md.
+  - name: gitlab_provider_harness.dep.uploads
+    version: "*"
+    kind: ns.dependency
+    meta:
+      comment: Transitive dependency of kickside/core, wired only so the harness boots.
+    component: "kickside/uploads"
+    parameters:
+      - name: kickside.uploads:api_router
+        value: app:api
+      - name: kickside.uploads:ui_server
+        value: app:gateway
+      - name: kickside.uploads:database_resource
+        value: app:db
+      - name: kickside.uploads:env_storage
+        value: app:env_storage
+      - name: kickside.uploads:storage_id
+        value: app:storage
+      - name: kickside.uploads.security:user_security_scope
+        value: app:user
+
+  # wippy/session — further transitive dependency (pulled in by
+  # kickside/core), not something this module needs conceptually; wired only
+  # so the harness boots. See BUILD-NOTES.md.
+  - name: gitlab_provider_harness.dep.session
+    version: "*"
+    kind: ns.dependency
+    meta:
+      comment: Transitive dependency of kickside/core, wired only so the harness boots. The *_function_id requirements are optional feature hooks (their own meta.description says the referenced feature is "enabled when set") — deliberately left unwired since this harness never touches sessions.
+    component: "wippy/session"
+    parameters:
+      - name: wippy.session:api_router
+        value: app:api
+      - name: wippy.session:database_resource
+        value: app:db
+      - name: wippy.session:env_storage
+        value: app:env_storage
+      - name: wippy.session:default_host
+        value: app:processes
+
+  # wippy/views — further transitive dependency (pulled in by
+  # kickside/core), not something this module needs conceptually; wired only
+  # so the harness boots. See BUILD-NOTES.md.
+  - name: gitlab_provider_harness.dep.views
+    version: "*"
+    kind: ns.dependency
+    meta:
+      comment: Transitive dependency of kickside/core, wired only so the harness boots.
+    component: "wippy/views"
+    parameters:
+      - name: wippy.views:api_router
+        value: app:api
+      - name: wippy.views:env_storage
+        value: app:env_storage
+      - name: wippy.views:server
+        value: app:gateway
+
+  - name: gitlab_provider_harness.dep.security
     version: "*"
     kind: ns.dependency
     meta:
       comment: Platform security groups (wippy.security:process) that give host-managed services their policy scope under strict mode.
     component: "wippy/security"
 
-  - name: starter_harness.dep.bootloader
+  - name: gitlab_provider_harness.dep.bootloader
     version: "*"
     kind: ns.dependency
     meta:
@@ -131,3 +320,19 @@ entries:
         value: app:processes
       - name: wippy.bootloader:env_storage
         value: app:env_storage
+
+  # Wires the module-under-test's own user_security_scope requirement through
+  # the parameters: pipeline stage instead of a raw .wippy.yaml override: path
+  # targeting an entry inside the workspace-replaced module — that override
+  # form stopped resolving on Wippy runtime v0.3.35a+ ("no entry found for
+  # ...") even though parameters: on a declared ns.dependency for the exact
+  # same entry resolves fine. See BUILD-NOTES.md.
+  - name: gitlab_provider_harness.dep.module
+    version: "*"
+    kind: ns.dependency
+    meta:
+      comment: The module under test itself, purely so its user_security_scope requirement can be wired through parameters:.
+    component: "cotique/gitlab-provider"
+    parameters:
+      - name: cotique.gitlab_provider.security:user_security_scope
+        value: app:user

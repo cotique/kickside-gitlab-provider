@@ -38,7 +38,7 @@ export default defineConfig({
     target: 'esnext',
     lib: {
       entry: resolve(moduleRoot, 'src/index.ts'),
-      name: 'AcmeStarter',
+      name: 'CotiqueGitlabProvider',
       fileName: 'index',
       formats: ['es'],
     },

@@ -7,12 +7,12 @@ function S(r) {
   const e = r.getAttribute(C);
   return e === "true" ? !0 : e === "false" ? !1 : null;
 }
-var Y = Object.defineProperty, J = (r, e, t) => e in r ? Y(r, e, { enumerable: !0, configurable: !0, writable: !0, value: t }) : r[e] = t, c = (r, e, t) => J(r, typeof e != "symbol" ? e + "" : e, t), q = [
+var Y = Object.defineProperty, q = (r, e, t) => e in r ? Y(r, e, { enumerable: !0, configurable: !0, writable: !0, value: t }) : r[e] = t, c = (r, e, t) => q(r, typeof e != "symbol" ? e + "" : e, t), G = [
   "themeConfigUrl",
   "primeVueCssUrl",
   "markdownCssUrl",
   "iframeCssUrl"
-], G = [
+], J = [
   ":where([data-wippy-theme-root]).w-theme-light",
   ":where([data-wippy-theme-root]).w-theme-dark"
 ].join(`,
@@ -43,7 +43,7 @@ function X(r) {
     return "";
   const e = r.map((t) => `  ${t}: inherit;`).join(`
 `);
-  return `${G} {
+  return `${J} {
 ${e}
 }`;
 }
@@ -52,7 +52,7 @@ function Z(r, e) {
   t && V(r, t, "@wippy-fe/css-variables-bridge");
 }
 function rr(r, e) {
-  const o = (e ?? q).map(async (a) => {
+  const o = (e ?? G).map(async (a) => {
     const s = H[a];
     if (!s)
       return console.warn(`[wippy-fe/webcomponent-core] hostCss key "${a}" is undefined — skipping. Remove it from hostCssKeys if the CSS was removed.`), null;
@@ -506,17 +506,17 @@ const _r = { class: "st" }, xr = { class: "st-head" }, wr = { class: "st-head-ic
   key: 2,
   class: "st-body"
 }, Vr = { class: "st-card" }, Pr = { class: "st-count" }, Rr = /* @__PURE__ */ A({
-  __name: "starter",
+  __name: "gitlab-provider",
   setup(r) {
     const e = d(null), t = d(!0), o = d("");
     async function a() {
       t.value = !0, o.value = "";
       try {
-        const { data: s } = await B.get("/api/v1/starter/status");
-        if (!s?.success) throw new Error(s?.error || "Could not load starter status.");
-        e.value = { module: String(s.module), count: Number(s.count) || 0 };
+        const { data: s } = await B.get("/api/v1/gitlab-provider/status");
+        if (!s?.success) throw new Error(s?.error || "Could not load gitlab-provider status.");
+        e.value = { module: String(s.module), status: String(s.status), provider: String(s.provider) };
       } catch (s) {
-        e.value = null, o.value = s instanceof Error ? s.message : "Could not load starter status.";
+        e.value = null, o.value = s instanceof Error ? s.message : "Could not load gitlab-provider status.";
       } finally {
         t.value = !1;
       }
@@ -524,11 +524,11 @@ const _r = { class: "st" }, xr = { class: "st-head" }, wr = { class: "st-head-ic
     return I(a), (s, i) => (g(), b("div", _r, [
       v("div", xr, [
         v("div", wr, [
-          O(L(z), { icon: "tabler:terminal-2" })
+          O(L(z), { icon: "tabler:brand-gitlab" })
         ]),
         v("div", null, [
-          v("h1", Cr, x(e.value?.module ?? "acme/starter"), 1),
-          i[0] || (i[0] = v("p", { class: "st-sub" }, "Log entries written through the starter sink.", -1))
+          v("h1", Cr, x(e.value?.module ?? "cotique/gitlab-provider"), 1),
+          i[0] || (i[0] = v("p", { class: "st-sub" }, "GitLab connection provider and merge-request pull source for Kickside Data Sync.", -1))
         ])
       ]),
       t.value ? (g(), b("div", kr, "Loading…")) : o.value ? (g(), b("div", Sr, [
@@ -540,8 +540,8 @@ const _r = { class: "st" }, xr = { class: "st-head" }, wr = { class: "st-head-ic
         }, "Retry")
       ])) : (g(), b("div", Er, [
         v("div", Vr, [
-          v("span", Pr, x(e.value?.count ?? 0), 1),
-          i[1] || (i[1] = v("span", { class: "st-count-label" }, "log entries", -1))
+          v("span", Pr, x(e.value?.status ?? "unknown"), 1),
+          i[1] || (i[1] = v("span", { class: "st-count-label" }, "module status", -1))
         ])
       ]))
     ]));

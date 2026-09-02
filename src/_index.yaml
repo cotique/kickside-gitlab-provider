@@ -1,132 +1,108 @@
 version: "1.0"
-namespace: acme.starter
+namespace: cotique.gitlab_provider
 
 entries:
-  # acme.starter:definition
+  # cotique.gitlab_provider:definition
   - name: definition
     kind: ns.definition
     meta:
-      title: Acme Starter
-      description: Starter module scaffold — a writable log sink published as an automation port, persisted rows, a status API, and a web-component page.
+      title: GitLab Connector
+      description: Read-only GitLab connector — a personal/project access token connection provider plus a merge-request pull source for Kickside Data Sync. Never creates, updates, merges, comments on, approves, or labels anything.
 
-  # acme.starter:dep.kickside.contract
+  # ─── Dependencies ──────────────────────────────────────────────────────
+  # cotique.gitlab_provider:dep.kickside.contract
   - version: "*"
     name: dep.kickside.contract
     kind: ns.dependency
     meta:
-      comment: Implements the shared writable store contract.
+      comment: Base kickside.contract:component / :deletable contract definitions the connection binding implements.
     component: kickside/contract
 
-  # acme.starter:dep.wippy.migration
+  # cotique.gitlab_provider:dep.kickside.connection
   - version: "*"
-    name: dep.wippy.migration
+    name: dep.kickside.connection
     kind: ns.dependency
     meta:
-      comment: Migration framework for the log entries table.
-    component: wippy/migration
+      comment: kickside.connection:connection contract definition and the base_connection get_status/delete boilerplate library.
+    component: kickside/connection
 
-  # ─── Dependency interface (ns.requirement) ───────────────────────────
-  - name: target_db
-    kind: ns.requirement
+  # cotique.gitlab_provider:dep.kickside.component
+  - version: "*"
+    name: dep.kickside.component
+    kind: ns.dependency
     meta:
-      comment: Database resource for log entry rows and migrations.
-    default: app:db
-    targets:
-      - entry: acme.starter.migrations:01_create_log_entries
-        path: .meta.target_db
+      comment: kickside.component:component client library — component.open / component.get_private_context used to read connection credentials.
+    component: kickside/component
 
+  # cotique.gitlab_provider:dep.kickside.core
+  # NOTE: kickside.data:pullable / kickside.data:writable are exact registry
+  # ids confirmed by `wippy registry show kickside.data:pullable --json` per
+  # the shared build brief (2026-09-02). Which installed package actually
+  # DECLARES them was independently re-verified for this checkout instead of
+  # assumed — see BUILD-NOTES.md "Dependency that owns kickside.data:pullable".
+  - version: "*"
+    name: dep.kickside.core
+    kind: ns.dependency
+    meta:
+      comment: Owns the kickside.data:pullable contract definition implemented by the merge-request pull source (verified — see BUILD-NOTES.md).
+    component: kickside/core
+
+  # ─── Dependency interface (ns.requirement) ────────────────────────────
   - name: api_router
     kind: ns.requirement
     meta:
-      comment: HTTP router the starter endpoints attach to. Must enforce auth + endpoint_firewall.
+      comment: HTTP router the gitlab-provider status endpoint attaches to. Must enforce auth + endpoint_firewall.
     default: app:api
     targets:
-      - entry: acme.starter.api:get_status.endpoint
+      - entry: cotique.gitlab_provider.api:get_status.endpoint
         path: .meta.router
 
   - name: ui_server
     kind: ns.requirement
     meta:
-      comment: HTTP server the starter UI bundle is served from.
+      comment: HTTP server the gitlab-provider UI bundle is served from.
     default: app:gateway
     targets:
-      - entry: acme.starter:ui_static
+      - entry: cotique.gitlab_provider:ui_static
         path: .meta.server
 
-  # ─── Log sink (automation port + contract binding) ───────────────────
-  # acme.starter:log
-  - name: log
-    kind: registry.entry
-    meta:
-      type: kickside.automation.port
-      title: Starter Log
-      comment: Write each item to the runtime log.
-      icon: tabler:terminal-2
-    binding: acme.starter:log_sink
-    config_schema:
-      label:
-        type: string
-        title: Log label
-        description: Prefix stamped on every logged item.
-        default: LOG
-        picker: wc-schema-form
-    input_schema: |
-      { "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "content": { "type": "string", "description": "Item body to log." }
-        } }
-    operations:
-      upsert: {}
-
-  # acme.starter:log_sink
-  - name: log_sink
-    kind: contract.binding
-    meta:
-      title: Starter Log
-      comment: Persist and log each incoming item.
-      group: Starter
-      icon: tabler:terminal-2
-    contracts:
-      - contract: kickside.data:writable
-        methods:
-          write: acme.starter.sink:write
-
-  # ─── UI (the starter page as a Wippy web component) ──────────────────
+  # ─── UI (the gitlab-provider page as a Wippy web component) ──────────────────
   # The module BUILDS (ui/), SHIPS (static/), and SERVES (its own http.static)
-  # the page, exposed as a view.component the host mounts by tag.
+  # the page, exposed as a view.component the host mounts by tag. Kept from
+  # the template scaffold with minimal changes (see BUILD-NOTES.md) — this
+  # task is backend-only in scope.
   - name: ui_fs
     kind: fs.directory
     meta:
-      comment: Built starter web component bundle (from ui/).
+      comment: Built gitlab-provider web component bundle (from ui/).
     directory: ./static
     auto_init: true
 
   - name: ui_static
     kind: http.static
     meta:
-      comment: Serves the starter web component bundle at /acme-starter.
+      comment: Serves the gitlab-provider web component bundle at /cotique-gitlab-provider.
       server: app:gateway
-    path: /acme-starter
-    fs: acme.starter:ui_fs
+    path: /cotique-gitlab-provider
+    fs: cotique.gitlab_provider:ui_fs
     options:
       mime_types:
         .js: application/javascript
         .css: text/css
         .map: application/json
 
-  - name: starter_view
+  - name: gitlab_provider_view
     kind: registry.entry
     meta:
       type: view.component
-      title: Starter
+      title: GitLab Connector
       announced: true
       auto_register: true
-      tag_name: acme-starter
-      base_path: acme-starter
+      tag_name: cotique-gitlab-provider
+      base_path: cotique-gitlab-provider
       entry_point: index.js
-      icon: tabler:terminal-2
-      description: Renders the acme/starter status view inside the Kickside shell, loads authenticated status data through the host proxy, and requires no caller-supplied props.
+      icon: tabler:brand-gitlab
+      description: Renders the cotique/gitlab-provider status view inside the Kickside shell, loads authenticated status data through the host proxy, and requires no caller-supplied props.
       props: {}
 
   - name: nav_item
@@ -134,11 +110,11 @@ entries:
     meta:
       type: ui.nav_item
       section: ""
-      path: /starter
-      route_name: starter
-      title: Starter
-      comment: Log entries written through the starter sink.
-      icon: tabler:terminal-2
+      path: /gitlab-provider
+      route_name: gitlab-provider
+      title: GitLab Connector
+      comment: GitLab connection provider and merge-request pull source status.
+      icon: tabler:brand-gitlab
       order: 90
       render: component
-      component_tag: acme-starter
+      component_tag: cotique-gitlab-provider

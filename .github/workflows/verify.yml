@@ -26,13 +26,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: acme_test_starter
+          POSTGRES_DB: cotique_test_gitlab_provider
           POSTGRES_USER: kickside
           POSTGRES_PASSWORD: kickside
         ports:
           - 5433:5432
         options: >-
-          --health-cmd "pg_isready -U kickside -d acme_test_starter"
+          --health-cmd "pg_isready -U kickside -d cotique_test_gitlab_provider"
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30

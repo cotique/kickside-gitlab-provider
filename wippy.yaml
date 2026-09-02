@@ -1,15 +1,15 @@
-organization: acme
-module: starter
-description: Starter module scaffold — a writable log sink published as an automation port, persisted rows, a status API, and a web-component page.
+organization: cotique
+module: gitlab-provider
+description: Read-only GitLab connector — personal/project access token connection provider (test_connection, discover_resources) and a merge-request pull source for Kickside Data Sync.
 # Pick the license your distribution requires (kickside platform modules use BUSL-1.1).
 license: MIT
-repository: https://github.com/acme/starter
+repository: https://github.com/cotique/kickside-gitlab-provider
 homepage: https://wippy.ai
 keywords:
   - kickside
-  - starter
+  - gitlab-provider
 embed:
-  - acme.starter:ui_fs
+  - cotique.gitlab_provider:ui_fs
 exclude_meta:
   type:
     - test

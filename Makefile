@@ -1,5 +1,5 @@
-# acme/starter — initialize, verify, and publish a standalone Kickside module.
-MODULE := starter
+# cotique/gitlab-provider — initialize, verify, and publish a standalone Kickside module.
+MODULE := gitlab-provider
 TYPE   := plugin
 VIS    := private
 EMBED  := --embed ui_fs
@@ -23,8 +23,14 @@ build:
 	npm --prefix ui run build
 dev:
 	npm --prefix ui run dev
+# Scoped to our own namespace: a real (non-trivial) dependency graph
+# (kickside/connection, kickside/component, kickside/core, ...) pulls in
+# hundreds of upstream Lua entries that an unscoped `wippy lint` also checks
+# — including at least one pre-existing upstream type error in
+# kickside.core.projections.persist:catchup, confirmed present in
+# kickside/core as of this writing, not introduced here. See BUILD-NOTES.md.
 lint:
-	wippy lint
+	wippy lint --ns "cotique.gitlab_provider.*"
 typecheck:
 	npm --prefix ui run type-check
 # The runner exits 0 when it discovers zero tests, which turns a broken

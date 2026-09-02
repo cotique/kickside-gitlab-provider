@@ -1,0 +1,142 @@
+version: "1.0"
+namespace: cotique.gitlab_provider.source
+
+entries:
+  # cotique.gitlab_provider.source:pull_core
+  - name: pull_core
+    kind: library.lua
+    meta:
+      comment: Real, tested pagination + fetch + normalize logic for GitLab merge requests. No dependency on the guessed kickside.data:pullable envelope — see pull_items.lua/pull_keys.lua.
+    source: file://pull_core.lua
+    modules: []
+    imports:
+      data_error: cotique.gitlab_provider.client:data_error
+      types: cotique.gitlab_provider.client:types
+      api: cotique.gitlab_provider.client:api
+
+  # pull_core's own unit tests live in the standalone harness
+  # (test/src/pull_core_test.lua), not colocated in this src/ tree — see
+  # client/_index.yaml's comment and BUILD-NOTES.md.
+
+  # cotique.gitlab_provider.source:pull_items
+  # UNVERIFIED envelope — see the file's own header comment and
+  # BUILD-NOTES.md "OPEN: kickside.data:pullable's exact envelope".
+  - name: pull_items
+    kind: function.lua
+    meta:
+      comment: "kickside.data:pullable.pull (INFERRED method/envelope by analogy — see file header) for GitLab project merge requests."
+    source: file://pull_items.lua
+    modules:
+      - ctx
+    imports:
+      transport: cotique.gitlab_provider.client:transport
+      pull_core: cotique.gitlab_provider.source:pull_core
+      data_error: cotique.gitlab_provider.client:data_error
+    method: pull
+
+  # cotique.gitlab_provider.source:pull_keys
+  # NOT currently bound to any contract — empirically confirmed
+  # kickside.data:pullable has no pull_keys method (see this entry's own
+  # comment and BUILD-NOTES.md "OPEN: kickside.data:pullable's exact
+  # envelope" for the full correction). Kept standalone: the underlying
+  # pull_core.list_merge_request_keys logic is real and tested regardless of
+  # how this ends up wired.
+  - name: pull_keys
+    kind: function.lua
+    meta:
+      comment: "Keys-only GitLab project merge request listing for Data Sync reconcile, by analogy to kickside/github's pull_keys. NOT bound to kickside.data:pullable — that contract only defines pull (empirically confirmed, see BUILD-NOTES.md). Not currently wired to anything; kept because the underlying logic (pull_core.list_merge_request_keys) is real and tested."
+    source: file://pull_keys.lua
+    modules:
+      - ctx
+    imports:
+      transport: cotique.gitlab_provider.client:transport
+      pull_core: cotique.gitlab_provider.source:pull_core
+      data_error: cotique.gitlab_provider.client:data_error
+    method: pull_keys
+
+  # cotique.gitlab_provider.source:project_mrs_source
+  # Implements kickside.data:pullable. context_required: [component_id] is
+  # INFERRED BY ANALOGY to the connection contract's own documented
+  # convention (04-connections-and-integrations.md: "Every contract entry
+  # carries context_required: [component_id]") — the pullable contract
+  # itself does not document this explicitly anywhere reachable from this
+  # checkout. See BUILD-NOTES.md.
+  #
+  # CORRECTION (empirically verified, not inferred): kickside.data:pullable
+  # binds ONLY "pull". A pull_keys method here was originally inferred from
+  # kickside/github's separate pull_keys entry comment (see pull_keys.lua's
+  # own header), but once kickside/core became a real, unpacked dependency
+  # in the test harness (see BUILD-NOTES.md), the platform's own contract-
+  # binding validator rejected it at boot:
+  #   "bound method is not defined in contract definition:
+  #    cotique.gitlab_provider.source:project_mrs_source binds
+  #    kickside.data:pullable.pull_keys"
+  # — and no second "keys"/"reconcile" contract exists anywhere in the
+  # resolved dependency graph either (checked via
+  # `wippy registry list --ns "kickside*" | grep contract.definition`). The
+  # pull_keys.lua function itself is kept (a keys-only Data Sync reconcile
+  # hook clearly exists in kickside/github by its own doc comment), it is
+  # just not bound through this contract — see BUILD-NOTES.md for what
+  # remains open about how it actually gets wired.
+  - name: project_mrs_source
+    kind: contract.binding
+    meta:
+      title: GitLab Merge Requests
+      comment: Pulls merge requests for one GitLab project as the read side of Kickside Data Sync.
+      group: GitLab Connector
+      icon: tabler:brand-gitlab
+    contracts:
+      - contract: kickside.data:pullable
+        context_required: [component_id]
+        methods:
+          pull: cotique.gitlab_provider.source:pull_items
+
+  # cotique.gitlab_provider.source:project_mrs
+  # kickside.automation.port entry, per the real log/log_sink example's field
+  # shape (binding:, config_schema:, and — by symmetry with the sink's
+  # input_schema: — an output_schema: for a SOURCE's item shape;
+  # operations: { pull: {} } by analogy with the sink's
+  # operations: { upsert: {} }). This whole entry shape is flagged as
+  # inferred alongside the rest of the pullable-envelope uncertainty — see
+  # BUILD-NOTES.md.
+  - name: project_mrs
+    kind: registry.entry
+    meta:
+      type: kickside.automation.port
+      title: GitLab Merge Requests
+      comment: Merge requests for a selected GitLab project, as a Data Sync pull source.
+      icon: tabler:brand-gitlab
+    binding: cotique.gitlab_provider.source:project_mrs_source
+    config_schema:
+      project_id:
+        type: string
+        title: Project
+        description: GitLab project to pull merge requests from (selected via the connection's discover_resources).
+        required: true
+        picker: wc-schema-form
+      state:
+        type: string
+        title: State filter
+        description: Which merge request states to pull. Defaults to all — the caller decides what to filter.
+        default: all
+        enum: [all, opened, merged, closed]
+        picker: wc-schema-form
+    output_schema: |
+      { "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Provider-native merge request id." },
+          "title": { "type": "string" },
+          "state": { "type": "string", "enum": ["open", "merged", "closed"] },
+          "author": { "type": ["string", "null"] },
+          "source_branch": { "type": ["string", "null"] },
+          "target_branch": { "type": ["string", "null"] },
+          "created_at": { "type": ["string", "null"], "description": "ISO 8601, as returned by the API." },
+          "updated_at": { "type": ["string", "null"] },
+          "merged_at": { "type": ["string", "null"] },
+          "url": { "type": ["string", "null"], "description": "Web (html) URL." },
+          "raw": { "type": "object", "description": "The original GitLab API item, untouched." }
+        },
+        "required": ["id", "title", "state", "url", "raw"] }
+    operations:
+      pull: {}
