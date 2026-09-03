@@ -13,10 +13,15 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # "latest" resolves the newest published runtime CLI on every run so the
-  # template is always verified against current releases. Set an exact tag
-  # (e.g. v0.3.28a) only to bisect a runtime regression.
-  WIPPY_VERSION: latest
+  # Pinned, not "latest": v0.3.35a has a confirmed regression where `wippy
+  # test` fails to resolve a workspace-replaced module's own cross-package
+  # entry references ("node with ID {cotique.gitlab.source pull_core ...}
+  # not found"), even though `wippy update`/`wippy lint` resolve the exact
+  # same graph fine on the same version. Isolated directly: identical
+  # checkout, identical lock — passes on v0.3.33a, fails on v0.3.35a. See
+  # BUILD-NOTES.md for the full repro. Bump back to "latest" once a fixed
+  # release is out; re-pin (or bisect with an exact tag) if this recurs.
+  WIPPY_VERSION: v0.3.33a
 
 jobs:
   module:

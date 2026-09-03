@@ -812,3 +812,43 @@ surfaces purely through the workspace replacement, matching the
 proven-clean shape. `make verify` re-verified from a genuinely fresh state
 (`test/.wippy/vendor`, `test/wippy.lock`, and the root `wippy.lock` all
 deleted first): 33/33 tests on both SQLite and Postgres, lint clean.
+
+## RESOLVED: CI red — a real `wippy test` regression in v0.3.35a, not our fix
+
+After pushing the rename/UI-removal/README work, CI failed at the `test`
+step with `node with ID {cotique.gitlab.source pull_core cotique.gitlab.
+source:pull_core} not found` — a workspace-replaced module's own entries
+not resolving during `wippy test`, even though `wippy update`/`wippy lint`
+resolved the identical graph fine moments earlier in the same job.
+
+Isolated directly, not assumed: downloaded the actual `latest` CLI release
+(`v0.3.35a`, 2026-09-01 — confirmed via `wippy version`) and ran it against
+this exact checkout, from a genuinely fresh state (`test/.wippy/vendor`,
+`test/wippy.lock`, root `wippy.lock` all deleted first):
+
+```
+wippy update            # succeeds, 16 modules resolved
+cd test && wippy update # succeeds, 16 modules resolved
+cd test && wippy test   # FAILS: node with ID {...pull_core...} not found
+```
+
+Then ran the identical sequence, same checkout, same lock, with the
+locally-installed `v0.3.33a` instead — passes clean, 33/33. Confirmed this
+isn't specific to this repo: reproduces identically on
+`kickside-bitbucket-provider` too (different entry, same error shape —
+see that repo's own BUILD-NOTES.md).
+
+This is the third distinct `v0.3.35a+` regression this project's own history
+has hit around workspace-replaced modules (the first two: a raw
+`.wippy.yaml` `override:` path failing to resolve, and the
+explicit-module-dependency bootstrap deadlock documented above) — all three
+share the same shape: something about resolving into a workspace-replaced
+module's own entries changed between `v0.3.33a` and `v0.3.35a`, and it
+doesn't affect every code path equally (`wippy update`/`wippy lint` are
+fine; `wippy test`'s own state-loading is not).
+
+**Fix:** pinned `WIPPY_VERSION: v0.3.33a` in `.github/workflows/verify.yml`
+instead of `latest`, per that file's own stated policy ("set an exact tag
+only to bisect a runtime regression" — this is exactly that case). Not a
+permanent fix — revert to `latest` once a release without this regression
+ships, or re-pin/bisect again if it recurs.
