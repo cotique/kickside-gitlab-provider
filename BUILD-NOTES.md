@@ -26,48 +26,26 @@ useful cross-confirmation, not coincidence.
   this module binds into, per `docs/kickside-development/04-connections-and-integrations.md`.
 - **`wippy search "kickside data"` / `sync`** — found `kickside/sync` v0.1.57
   ("Kickside Data Sync automation kind"). Did **not** end up depending on
-  this — `kickside.data:pullable`/`:writable` resolve from `kickside/core`
-  instead (verified mechanically, see below), and nothing else in this
-  module needed `kickside/sync`.
+  this — `kickside.data:pullable`/`:writable` resolve transitively via
+  `kickside/component`/`kickside/connection`/`kickside/contract`, not
+  `kickside/sync` and not `kickside/core` either (verified mechanically,
+  see below), and nothing else in this module needed `kickside/sync`.
 - No OAuth needed (GitLab uses personal/project access tokens only, per the
   provider brief) — `kickside/oauth` is deliberately not a dependency.
 
 ### Verifying which package owns `kickside.data:pullable` — corrected, an
 earlier experiment here was wrong
 
-An earlier pass added an explicit `dep.kickside.core` to `src/_index.yaml`
-after observing `wippy registry list --ns "kickside.data*"` return nothing
-without it. That observation was real, but the conclusion drawn from it
-("`kickside/core` is the correct, real dependency for `kickside.data:pullable`,
-declare it explicitly") was wrong — most likely the experiment ran before
-`kickside/connection`/`kickside/component` were both already present as
-dependencies, not because `kickside/core` is actually required.
+Moved to the shared platform findings file
+(`C:\claude\work\wippy\work-wippy\FINDINGS.md`) — see "The
+`kickside.data:pullable` contract's real envelope, method surface, and
+package ownership (verified against real unpacked source)" (the package-
+ownership facts are platform-wide, not GitLab-specific).
 
-**Corrected against the real reference** (checking
-`providers-master\providers-master\github\src\_index.yaml` and
-`...\atlassian\src\_index.yaml` directly): neither real module declares
-`kickside/core` at all — both stop at `kickside/component`,
-`kickside/connection`, `kickside/contract`, plus `kickside/oauth`/
-`kickside/settings` for their OAuth mode (which this module correctly
-doesn't have). **Cross-checked against this module's own sibling,
-`kickside-bitbucket-provider`**, which never had this extra dependency and
-still resolves `kickside.data:pullable` cleanly
-(`wippy registry list --ns "kickside.data*"` → all 4 entries, no
-`kickside/core` in `src/_index.yaml`, confirmed present only transitively in
-`wippy.lock`).
-
-**Fix applied:** removed `dep.kickside.core` from `src/_index.yaml` entirely.
-Re-verified: `wippy update` + `wippy registry list --ns "kickside.data*"`
-still returns all 4 entries (`pullable`, `writable`,
-`external_record_writer`, `data_connector_manifest_schema`) without it —
-`kickside/component`/`kickside/connection`/`kickside/contract` alone pull it
-in transitively, exactly matching both the real reference modules and this
-module's own sibling. `make verify` re-run clean after the removal (37/37).
-**Lesson for next time:** a mechanical experiment that changes one variable
-at a time still needs the *other* variables held at their real final state,
-not an earlier, incomplete one — the original test's "removed core, lost the
-namespace" observation was true but confounded by an incomplete dependency
-set at that point in the build, not by core actually being required.
+**Local fix applied:** removed `dep.kickside.core` from `src/_index.yaml`
+entirely. Re-verified: `wippy update` + `wippy registry list --ns
+"kickside.data*"` still returns all 4 entries without it. `make verify`
+re-run clean after the removal (37/37).
 
 ## Structure built
 
@@ -152,68 +130,35 @@ INFERRED BY ANALOGY to `kickside.data:writable.write`. That inference was
 **wrong in several concrete ways**, now corrected against real ground
 truth:
 
-1. **Items are wrapped, not flat.** Every item in `pull`'s response is
-   `{ item_key, dedup_key, op = "upsert"|"delete", source_version,
-   occurred_at, payload = <the normalized record> }` — not a bare
-   normalized record. `payload.url` is `payload.source_url` in both real
-   references' platform-wide payload convention.
-2. **The cursor is a table, never a bare string.** `{ page = N, since =
-   "..." }` here (GitHub's real cursor is the simpler analogue of Jira's
-   more explicit `{ phase, start_at, hw }` two-phase design — GitHub's
-   shape was mirrored since our own pagination is GitHub-page-shaped, not
-   JQL-offset-shaped).
-3. **`next_cursor` is set on every successful response, has_more true or
-   false — never nil on success.** On exhaustion it resets to a fresh
-   resumable position (`{ page = 1, since = <max updated_at seen this
-   pull> }`), not `nil`, so a scheduler can keep polling forever.
-4. **`pull_keys` is wired via the port's `reconcile:` field, not a second
-   contract method.** This checkout had already found empirically (see the
-   git-blame'd history of this section, and the contract-binding validator
-   error quoted below) that `kickside.data:pullable` binds only `pull` —
-   that part was already correct. What was still open was *where*
-   `pull_keys` actually gets invoked from. Now confirmed: the
-   `kickside.automation.port` registry entry (`project_mrs` here) declares
-   `reconcile: { pull_keys: <entry id> }`, a field sibling to `binding:` —
-   copied exactly from `kickside/github`'s `repo_items` port entry and
-   `kickside/atlassian`'s `issues` port entry, which both use this same
-   shape.
-5. **`context_required: [component_id]` on the pullable
-   `contract.binding`, previously "inferred by analogy," is independently
-   confirmed correct** — `kickside/github`'s real
-   `repo_items_source` binding declares this exact field. (`kickside/atlassian`'s
-   Jira binding omits it, so the two real references disagree with each
-   other here; this module already had it and more closely mirrors
-   GitHub's shape overall, so it was kept.)
-6. **Client/component_id resolution has a documented fallback chain**:
-   `deps.component_id -> ctx.get("component_id") -> config.connection_id`
-   (GitHub's real order; Jira's real order differs — `deps.component_id ->
-   config.connection_id -> ctx.get(...)` — the two real references disagree
-   with each other on ordering too, so GitHub's order was picked since this
-   module already mirrors GitHub's shape overall). Implemented in
-   `src/source/pull_core.lua`'s `resolve_client`, unit-tested directly
-   against a fake `deps.transport` (`test/src/pull_core_test.lua`).
-7. **The DataError taxonomy has a confirmed real function surface**:
-   `M.failure(code, message, retriable, scope, retry_after_ms)`,
-   `M.connection(message)`, `M.invalid_config(message)`, `M.from_result(result,
-   action)` — copied from `providers-master/github/src/client/data_error.lua`
-   into `src/client/data_error.lua`. The failure envelope itself is now
-   `{ success = false, error = { code, message, retriable, scope },
-   retry_after_ms? }` (previously a *bare* `{ code, message, retriable,
-   scope }` table that callers wrapped themselves) — every call site
-   (`client/api.lua`, `source/pull_core.lua`, `source/pull_items.lua`,
-   `source/pull_keys.lua`, `connection/test_connection.lua`,
-   `connection/discover_resources.lua`) was updated accordingly. This is
-   the one place the fix touched files outside `source/`,
-   `client/data_error.lua`, and `source/_index.yaml`: `client/api.lua`'s
-   two `client:get()` failure branches now build their DataError through
-   `data_error.from_result`/`data_error.failure` instead of the removed
-   `from_http`/`from_transport`/`envelope` functions, and
-   `test_connection.lua`/`discover_resources.lua` read `rerr.error.message`
-   instead of `rerr.message` since the value they get back is now the full
-   wrapped envelope, not a bare error table. None of `client/api.lua`'s
-   actual HTTP/auth logic (headers, pagination header parsing, retry
-   semantics) changed — only its error-construction call sites, forced by
-   the data_error rewrite.
+The full envelope shape (item wrapping, table cursor, `next_cursor`
+semantics), the method-surface correction (`pull` only — no `pull_keys`
+method on the contract; keys-only reconcile is wired via the automation
+port's `reconcile:` field instead), the `context_required`/component_id-
+resolution-order disagreement between the two real references, and the
+DataError taxonomy's real function surface are all platform-wide facts, not
+GitLab-specific — moved to the shared platform findings file
+(`C:\claude\work\wippy\work-wippy\FINDINGS.md`), see "The
+`kickside.data:pullable` contract's real envelope, method surface, and
+package ownership (verified against real unpacked source)".
+
+**What changed in this module's own code to apply the correction:** the
+failure envelope is now `{ success = false, error = { code, message,
+retriable, scope }, retry_after_ms? }` (previously a *bare* `{ code,
+message, retriable, scope }` table that callers wrapped themselves) —
+every call site (`client/api.lua`, `source/pull_core.lua`,
+`source/pull_items.lua`, `source/pull_keys.lua`,
+`connection/test_connection.lua`, `connection/discover_resources.lua`) was
+updated accordingly. This is the one place the fix touched files outside
+`source/`, `client/data_error.lua`, and `source/_index.yaml`:
+`client/api.lua`'s two `client:get()` failure branches now build their
+DataError through `data_error.from_result`/`data_error.failure` instead of
+the removed `from_http`/`from_transport`/`envelope` functions, and
+`test_connection.lua`/`discover_resources.lua` read `rerr.error.message`
+instead of `rerr.message` since the value they get back is now the full
+wrapped envelope, not a bare error table. None of `client/api.lua`'s actual
+HTTP/auth logic (headers, pagination header parsing, retry semantics)
+changed — only its error-construction call sites, forced by the
+data_error rewrite.
 
 **What was NOT changed, confirmed still correct:** `connection/` (the
 connection binding itself), `client/transport.lua`, `discover_resources`'s
@@ -414,111 +359,60 @@ brand-new lock, on the locally-installed CLI (v0.3.33a) — fixed upstream in
 the CLI version CI actually uses (RESOLVED, but genuinely surprising —
 documented in full because the workaround required is non-obvious)
 
-Setting up the standalone harness exactly per `13-testing.md`/the working
-`cotique/eng-metrics` precedent (`test/.wippy.yaml`'s `workspace.replacements`
-mapping `cotique/gitlab: ..`, `test/src/_index.yaml` declaring the
-module itself as an `ns.dependency` purely to route its
-`user_security_scope` requirement through `parameters:`) failed outright on
-a completely fresh harness (no `test/wippy.lock` yet):
+Setting up the standalone harness hit a `wippy update` bootstrap bug: on the
+locally-installed CLI (`v0.3.33a`), `wippy update` only reads
+`workspace.replacements` when a `wippy.lock` already exists for that
+directory — on a from-scratch resolve it silently falls through to Hub
+lookup for the locally-replaced module and fails with `module not found`.
+Confirmed fixed in `v0.3.35a` (the same "latest" CI resolves). Moved to the
+shared platform findings file (`C:\claude\work\wippy\work-wippy\FINDINGS.md`)
+— see the addendum on "CI: a raw `.wippy.yaml` override targeting a
+workspace-replaced module's entry stopped resolving in wippy runtime
+v0.3.35a" (point 1) — this is a platform CLI bug, not GitLab-specific, and
+reproduces identically against a known-working sibling module's harness.
 
-```
-Error: dependency conflicts detected (1): cotique/gitlab@*: list versions: module not found
-```
-
-Isolated through direct, reproducible side-by-side comparison against the
-**working** `cotique/eng-metrics` harness (same machine, same `wippy`
-binary, same session):
-
-- Copying `eng-metrics`' byte-identical, already-proven-working
-  `test/.wippy.yaml` into this repo's `test/` and running `wippy update`
-  there **also failed the same way** — ruling out file content entirely.
-- Deleting `eng-metrics`' own `test/wippy.lock` and re-running `wippy update`
-  there **reproduced the exact same failure** in a project that had been
-  working seconds before. Restoring the lock made it work again.
-- Conclusion: `wippy update`, on the locally-installed CLI
-  (`v0.3.33a`, 2026-08-26), only reads `workspace.replacements` when a
-  `wippy.lock` already exists for that directory. On a from-scratch resolve
-  (no lock), it silently ignores `workspace.replacements` entirely and
-  falls straight through to Hub lookup for every declared dependency,
-  including the one meant to be locally replaced — which then fails for an
-  unpublished module with "module not found."
-- **This is fixed in the current release.** Downloaded and checksum-verified
-  `wippy-windows-amd64.exe` v0.3.35a (2026-09-01, the same "latest" this
-  repo's own CI resolves — see `.github/workflows/verify.yml`), deleted
-  `test/wippy.lock`, and ran `wippy update` fresh: it correctly logged
-  `scanning dependency source {kind: replacement cotique/gitlab,
-  ...}` and `module is replaced by local source; skipping install` on the
-  **very first** invocation, no bootstrap dance needed.
-- The globally-installed `wippy.exe` at `C:\Work\Projects\wippy\wippy.exe`
-  (shared across sibling projects on this machine, per `eng-metrics`'
-  BUILD-NOTES #2) was **not** replaced in this session — a live `wippy.exe`
-  process (PID observed via `tasklist`) held the file locked, and it is not
-  this session's place to guess whether that process belongs to unrelated
-  concurrent work and kill it. The verified `v0.3.35a` binary was used
-  directly from a temp path for the one-time confirmation above, then this
-  module's actual `make verify` run (see below) proceeded on the older,
-  locally-installed `v0.3.33a` using the one-time bootstrap workaround
-  described next — since CI does not have this problem (it always installs
-  fresh via "latest"), no permanent Makefile workaround was added for it.
-
-**One-time local bootstrap workaround** (only needed on a CLI older than
-v0.3.35a, only needed once per fresh checkout — this is what was actually
-done to get `make verify` green in this session, and is what anyone
-reproducing this locally on an older CLI needs to do once):
-
-1. Temporarily comment out the `gitlab_provider_harness.dep.module`
-   `ns.dependency` entry in `test/src/_index.yaml` (the one referencing
-   `cotique/gitlab`).
-2. Run `wippy update` inside `test/` — this succeeds and writes a
-   `wippy.lock` covering the other 15 transitive modules (no local
-   replacement referenced yet, so nothing needs Hub lookup for an
-   unpublished module).
-3. Restore the commented-out entry.
-4. Run `wippy update` again — a lock now exists, so the bug's precondition
-   is gone and the workspace replacement resolves correctly.
-
-**Recommendation:** upgrade the machine's global `wippy.exe` to the current
-release when the locking process is not in use, exactly per `eng-metrics`'
-BUILD-NOTES #2 precedent (keep the old binary as a `.bak` sibling; do not
-delete it). This will make the two-phase bootstrap above unnecessary for
-any future fresh `test/wippy.lock` on this machine.
+**Superseded:** the one-time local bootstrap workaround used to get
+`make verify` green under the older CLI (temporarily removing the harness's
+own `gitlab_provider_harness.dep.module` entry, running `wippy update`
+once, restoring it, running `wippy update` again) is no longer needed —
+see "Follow-up" below, where that same `ns.dependency` entry was later
+removed from the harness entirely.
 
 ### 3. Wippy Luau-style type checker does not follow `setmetatable`-based
 method dispatch (resolved — changed the API client's shape, not the type
 checker)
 
-The first draft of `client:api.new(opts)` returned a `setmetatable(t,
-Client)` object with `Client:get(...)` defined via `Client.__index =
-Client`. `wippy lint` failed with `no method get` at every call site
-(`client:get(...)`), even though this is completely ordinary Lua OOP.
-Rewritten to return a **plain table of closures** instead (`M.new` builds a
-fresh `client = {}` and assigns `function client.get(_, path, opts) ... end`
-directly on it, no metatable) — this matches the dominant idiom already used
-everywhere else in this codebase (`repo.lua` in the original template
-scaffold, `connection_lib.lua`, `transport.lua`) and the type checker
-resolves it fine, because it can see the method as a literal field on the
-table rather than something reached through `__index`.
+Moved to the shared platform findings file
+(`C:\claude\work\wippy\work-wippy\FINDINGS.md`) — see "More Luau/`wippy
+lint` type-checker gotchas: metatable method dispatch, paired `(value,
+err)` narrowing, and untyped table parameters" (item 1) — this is a
+`wippy lint`/Luau type-checker behavior, not specific to this module's own
+code shape.
 
-**Practice:** in this codebase, prefer "a function that returns a table of
-closures" over "a function that returns a metatable-tagged object" for
-anything that needs per-instance state — not just a style preference here,
-it's what the static type checker actually understands.
+**Practice adopted in this codebase:** prefer "a function that returns a
+table of closures" over "a function that returns a metatable-tagged
+object" for anything that needs per-instance state (`client:api.new`
+rewritten this way; matches `repo.lua`/`connection_lib.lua`/
+`transport.lua`'s existing convention) — the type checker resolves this
+shape fine, because it sees the method as a literal field on the table
+rather than something reached through `__index`.
 
 ### 4. `cannot call method on optional value without nil check` — the type
 checker does not narrow `T?` just from checking the paired `err` return
 (resolved)
 
-`local client, err = connection_lib.get_client(); if err then ... end;
-client:get(...)` failed lint with `cannot call method on optional value
-without nil check`, even with the `err`-only guard in place — the checker
-apparently does not infer that `err == nil` implies `client ~= nil` from a
-`(value, err)`-pair convention alone. Fixed everywhere this pattern appears
-(`discover_resources.lua`, `test_connection.lua`, `pull_items.lua`,
-`pull_keys.lua`) by checking `if err or not client then ... end` explicitly.
+Moved to the shared platform findings file
+(`C:\claude\work\wippy\work-wippy\FINDINGS.md`) — see "More Luau/`wippy
+lint` type-checker gotchas: metatable method dispatch, paired `(value,
+err)` narrowing, and untyped table parameters" (item 2) — a `wippy lint`
+type-checker behavior, not specific to this module.
 
-**Practice:** in this codebase's Lua, always guard both halves of a
-`(value, err)` return explicitly before using `value`, even where the
-convention "obviously" implies exactly one of them is set.
+**Practice adopted in this codebase:** always guard both halves of a
+`(value, err)` return explicitly (`if err or not client then ... end`)
+before using `value`, even where the convention "obviously" implies
+exactly one of them is set. Fixed everywhere this pattern appears
+(`discover_resources.lua`, `test_connection.lua`, `pull_items.lua`,
+`pull_keys.lua`).
 
 ### 5. The standalone harness's real transitive dependency depth (resolved
 — this module's own dependencies pull in a much larger graph than the
@@ -607,27 +501,18 @@ practice from the `eng-metrics` precedent.
 ### 7. Same type-checker strictness as #3/#4, hit again rewriting
 `source/pull_core.lua` for the corrected pullable envelope (resolved)
 
-`wippy lint` failed on the rewritten `pull_core.lua` with
-`argument 1: expected {...}, got any` at the `decode_cursor(req.cursor)`
-call site: the checker infers `decode_cursor`'s parameter as a specific
-table shape from how the function body indexes it (`cursor.page`,
-`cursor.since`), then rejects passing it an untyped (`any`) value — and
-`req.cursor`, reached through an unannotated `req` parameter, is `any` by
-default. A second, related error (`not enough arguments`) showed up at
-`pull_items.lua`/`pull_keys.lua`'s `pull_core.resolve_client(config)` call
-sites once `resolve_client`'s `deps` parameter was explicitly typed `any`
-without a `?` — the checker then required it at every call site, including
-the ones that legitimately omit it in production.
+Moved to the shared platform findings file
+(`C:\claude\work\wippy\work-wippy\FINDINGS.md`) — see "More Luau/`wippy
+lint` type-checker gotchas: metatable method dispatch, paired `(value,
+err)` narrowing, and untyped table parameters" (item 3) — an inferred-
+parameter-shape/`any` typing behavior of the checker itself, not specific
+to this module.
 
-**Fix:** added explicit Luau type annotations (`: any`, `: any?` for the
-optional `deps` parameter) to `decode_cursor`, `walk`, `config_value`, and
-`resolve_client` in `source/pull_core.lua` — matching the real reference
-implementations' own convention of typing loosely-shaped request/config/
-deps parameters as `any` throughout
-(`providers-master/github/src/source/pull_core.lua`,
-`providers-master/atlassian/src/jira/source/pull_core.lua` both do this
-extensively). `wippy lint --ns "cotique.gitlab.*"` passes clean
-after.
+**Fix applied here:** added explicit Luau type annotations (`: any`,
+`: any?` for the optional `deps` parameter) to `decode_cursor`, `walk`,
+`config_value`, and `resolve_client` in `source/pull_core.lua` — matching
+the real reference implementations' own convention. `wippy lint --ns
+"cotique.gitlab.*"` passes clean after.
 
 ## Deliverable checklist status
 
@@ -744,9 +629,13 @@ confirmed fine, no change needed:
 
 Found and fixed:
 
-- **`wippy.yaml` was missing the top-level `type: plugin` field** — checked
-  all 20 provider modules in the reference monorepo, every single one
-  declares it. Added.
+- **`wippy.yaml` was missing the top-level `type: plugin` field.** Added.
+  The underlying convention (undocumented but universal across all 20
+  real provider modules checked) is platform-wide, not GitLab-specific —
+  moved to the shared platform findings file
+  (`C:\claude\work\wippy\work-wippy\FINDINGS.md`), see "`wippy.yaml`'s
+  top-level `type: plugin` field is an undocumented but universal
+  convention across every real provider module".
 - **The unnecessary `kickside/core` dependency** — see the corrected section
   above.
 
@@ -756,6 +645,16 @@ Flagged, not changed (a real decision, not a technical correctness issue):
   `BUSL-1.1`; this module still has the template's default `MIT`. Left
   as-is — which license this repo ships under is the user's call, not
   something to silently match to Wippy's own platform-module convention.
+
+## RESOLVED: removed the UI/api/security apparatus (2026-09-02, later the same session)
+
+Moved to the shared platform findings file
+(`C:\claude\work\wippy\work-wippy\FINDINGS.md`) — see "A credential-only,
+no-picker connection provider needs no `ui/`, `api/`, or `security/`
+folder, no `embed:`, and no `kickside/core` dependency". (This heading's
+full content was lost without a pointer during an earlier documentation
+pass on this file; restored here from the identical finding independently
+confirmed and preserved on the sibling `kickside-bitbucket-provider` repo.)
 
 ## Renamed module identity: cotique/gitlab-provider -> cotique/gitlab (2026-09-03)
 
@@ -792,22 +691,18 @@ identically with `cotique/gitlab@*: list versions: module not found`.
 Root cause, confirmed by direct comparison and a control test: this
 module's harness declared the module-under-test itself as an explicit root
 `ns.dependency` (`gitlab_harness.dep.module`, wired purely so its own
-`user_security_scope` requirement — the one the now-removed `src/security/`
-declared — could be routed through `parameters:` instead of a raw
-`.wippy.yaml` `override:` path). Once that dependency is declared, `wippy
-update`'s first pass always attempts to resolve it directly against the
-Hub (never published there), fails outright, and — critically — writes no
-lock file at all. The documented two-pass bootstrap workaround (bare `wippy
-update`, then again with `--config .wippy.yaml`) needs the first pass to
-have written *some* lock for the second pass to build on; with none
-written, the second pass fails identically, forever. Confirmed this is not
-specific to this module: reproduces identically against
-`kickside-bitbucket-provider`'s real, merged `main` (same `bdf0085`-style
-fix) and against `cotique/eng-metrics`'s own `main` (read-only check; its
-`wippy.lock` was restored byte-identical afterward, so no lasting effect).
-A control test against a harness shape with no such explicit dependency
-(relying purely on `test/.wippy.yaml`'s `workspace.replacements`) bootstraps
-cleanly from scratch every time.
+`user_security_scope` requirement could be routed through `parameters:`
+instead of a raw `.wippy.yaml` `override:` path — the exact fix documented
+in the shared platform findings file's "CI: a raw `.wippy.yaml` override
+..." entry). This is a genuine, distinct follow-on discovery — that same
+fix causes a *new* problem on a fresh checkout — moved to the shared
+platform findings file (`C:\claude\work\wippy\work-wippy\FINDINGS.md`) as
+an addendum to that entry (point 2). Confirmed not specific to this module:
+reproduces identically against a sibling connector module's real, merged
+`main`, and against a third module's own `main` (read-only check, no
+lasting effect). A control test against a harness shape with no such
+explicit dependency (relying purely on `test/.wippy.yaml`'s
+`workspace.replacements`) bootstraps cleanly from scratch every time.
 
 Since `src/security/` (and the `user_security_scope` requirement it
 declared) is now gone entirely per the removal above, `gitlab_harness.dep.
@@ -825,31 +720,21 @@ source:pull_core} not found` — a workspace-replaced module's own entries
 not resolving during `wippy test`, even though `wippy update`/`wippy lint`
 resolved the identical graph fine moments earlier in the same job.
 
-Isolated directly, not assumed: downloaded the actual `latest` CLI release
-(`v0.3.35a`, 2026-09-01 — confirmed via `wippy version`) and ran it against
-this exact checkout, from a genuinely fresh state (`test/.wippy/vendor`,
-`test/wippy.lock`, root `wippy.lock` all deleted first):
+Isolated directly, not assumed (full reproduction steps, cross-repo
+confirmation, and its relationship to the other two `v0.3.35a+`
+workspace-replacement regressions moved to the shared platform findings
+file — see below): downloaded the actual `latest` CLI release (`v0.3.35a`)
+and ran it against this exact checkout from a genuinely fresh state —
+`wippy update`/`wippy lint` resolve the graph fine, `wippy test` fails with
+`node with ID {...pull_core...} not found`. The identical sequence on the
+locally-installed `v0.3.33a` passes clean, 33/33.
 
-```
-wippy update            # succeeds, 16 modules resolved
-cd test && wippy update # succeeds, 16 modules resolved
-cd test && wippy test   # FAILS: node with ID {...pull_core...} not found
-```
-
-Then ran the identical sequence, same checkout, same lock, with the
-locally-installed `v0.3.33a` instead — passes clean, 33/33. Confirmed this
-isn't specific to this repo: reproduces identically on
-`kickside-bitbucket-provider` too (different entry, same error shape —
-see that repo's own BUILD-NOTES.md).
-
-This is the third distinct `v0.3.35a+` regression this project's own history
-has hit around workspace-replaced modules (the first two: a raw
-`.wippy.yaml` `override:` path failing to resolve, and the
-explicit-module-dependency bootstrap deadlock documented above) — all three
-share the same shape: something about resolving into a workspace-replaced
-module's own entries changed between `v0.3.33a` and `v0.3.35a`, and it
-doesn't affect every code path equally (`wippy update`/`wippy lint` are
-fine; `wippy test`'s own state-loading is not).
+This is a platform-wide `wippy test` regression, not specific to this
+module — moved to the shared platform findings file
+(`C:\claude\work\wippy\work-wippy\FINDINGS.md`) — see "`wippy test`
+(v0.3.35a+) fails to find a workspace-replaced module's own entries during
+state-loading, even though `wippy update`/`wippy lint` resolve the identical
+graph moments earlier".
 
 **Fix:** pinned `WIPPY_VERSION: v0.3.33a` in `.github/workflows/verify.yml`
 instead of `latest`, per that file's own stated policy ("set an exact tag
