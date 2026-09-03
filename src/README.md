@@ -1,4 +1,4 @@
-# Cotique GitLab
+# GitLab Connector
 
 Read-only GitLab connector for Kickside.
 
