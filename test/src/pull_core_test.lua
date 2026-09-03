@@ -124,7 +124,7 @@ local function new_conformance_client(fixture)
 end
 
 local function define_tests()
-    test.describe("cotique.gitlab_provider.source pull_core", function()
+    test.describe("cotique.gitlab.source pull_core", function()
         test.it("wraps every item in the pullable envelope with the payload normalized", function()
             local client = new_fake_client({
                 { items = { raw_mr({}) }, next_page = "" },

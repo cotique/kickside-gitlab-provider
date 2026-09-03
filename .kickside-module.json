@@ -3,10 +3,10 @@
   "initialized": true,
   "identity": {
     "organization": "cotique",
-    "module": "gitlab-provider",
-    "namespace": "cotique.gitlab_provider",
-    "tag": "cotique-gitlab-provider",
-    "route": "gitlab-provider",
+    "module": "gitlab",
+    "namespace": "cotique.gitlab",
+    "tag": "cotique-gitlab",
+    "route": "gitlab",
     "title": "GitLab Connector",
     "githubOwner": "cotique"
   }

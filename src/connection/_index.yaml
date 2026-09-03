@@ -1,8 +1,8 @@
 version: "1.0"
-namespace: cotique.gitlab_provider.connection
+namespace: cotique.gitlab.connection
 
 entries:
-  # cotique.gitlab_provider.connection:connection_lib
+  # cotique.gitlab.connection:connection_lib
   - name: connection_lib
     kind: library.lua
     meta:
@@ -11,9 +11,9 @@ entries:
     modules:
       - ctx
     imports:
-      transport: cotique.gitlab_provider.client:transport
+      transport: cotique.gitlab.client:transport
 
-  # cotique.gitlab_provider.connection:get_status
+  # cotique.gitlab.connection:get_status
   - name: get_status
     kind: function.lua
     meta:
@@ -24,7 +24,7 @@ entries:
       base_connection: kickside.connection:base_connection
     method: get_status
 
-  # cotique.gitlab_provider.connection:delete
+  # cotique.gitlab.connection:delete
   - name: delete
     kind: function.lua
     meta:
@@ -35,7 +35,7 @@ entries:
       base_connection: kickside.connection:base_connection
     method: delete
 
-  # cotique.gitlab_provider.connection:test_connection
+  # cotique.gitlab.connection:test_connection
   - name: test_connection
     kind: function.lua
     meta:
@@ -43,10 +43,10 @@ entries:
     source: file://test_connection.lua
     modules: []
     imports:
-      connection_lib: cotique.gitlab_provider.connection:connection_lib
+      connection_lib: cotique.gitlab.connection:connection_lib
     method: test_connection
 
-  # cotique.gitlab_provider.connection:discover_resources
+  # cotique.gitlab.connection:discover_resources
   - name: discover_resources
     kind: function.lua
     meta:
@@ -54,11 +54,11 @@ entries:
     source: file://discover_resources.lua
     modules: []
     imports:
-      connection_lib: cotique.gitlab_provider.connection:connection_lib
-      api: cotique.gitlab_provider.client:api
+      connection_lib: cotique.gitlab.connection:connection_lib
+      api: cotique.gitlab.client:api
     method: discover_resources
 
-  # cotique.gitlab_provider.connection:gitlab_connection
+  # cotique.gitlab.connection:gitlab_connection
   # The canonical credential-only binding shape, per
   # docs/kickside-development/04-connections-and-integrations.md's "Minimal
   # Provider Example".
@@ -94,14 +94,14 @@ entries:
     contracts:
       - contract: kickside.contract:component
         methods:
-          get_status: cotique.gitlab_provider.connection:get_status
+          get_status: cotique.gitlab.connection:get_status
       - contract: kickside.connection:connection
         context_required: [component_id]
         methods:
-          get_status: cotique.gitlab_provider.connection:get_status
-          test_connection: cotique.gitlab_provider.connection:test_connection
-          discover_resources: cotique.gitlab_provider.connection:discover_resources
+          get_status: cotique.gitlab.connection:get_status
+          test_connection: cotique.gitlab.connection:test_connection
+          discover_resources: cotique.gitlab.connection:discover_resources
       - contract: kickside.contract:deletable
         context_required: [component_id]
         methods:
-          delete: cotique.gitlab_provider.connection:delete
+          delete: cotique.gitlab.connection:delete

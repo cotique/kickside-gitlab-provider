@@ -1,4 +1,4 @@
-# Build notes — cotique/gitlab-provider
+# Build notes — cotique/gitlab
 
 Working notes from building this module. Generic Kickside/Wippy/tooling
 knowledge only. Written in the same spirit as `cotique/eng-metrics`'
@@ -72,37 +72,37 @@ set at that point in the build, not by core actually being required.
 ## Structure built
 
 Mirrors `kickside/github`'s real registry shape (per the shared build
-brief), namespace `cotique.gitlab_provider`:
+brief), namespace `cotique.gitlab`:
 
-- `cotique.gitlab_provider.connection:connection_lib` — resolves
+- `cotique.gitlab.connection:connection_lib` — resolves
   `component_id` from ambient `ctx`, delegates credential resolution to
   `client:transport`.
-- `cotique.gitlab_provider.connection:get_status` / `:delete` — thin
+- `cotique.gitlab.connection:get_status` / `:delete` — thin
   delegates to `kickside.connection:base_connection` (see the open item
   below on the exact export shape).
-- `cotique.gitlab_provider.connection:test_connection` — real `GET /user`
+- `cotique.gitlab.connection:test_connection` — real `GET /user`
   call.
-- `cotique.gitlab_provider.connection:discover_resources` — paginated
+- `cotique.gitlab.connection:discover_resources` — paginated
   `GET /projects?membership=true&...` listing.
-- `cotique.gitlab_provider.connection:gitlab_connection` — the
+- `cotique.gitlab.connection:gitlab_connection` — the
   `contract.binding` tying the above into `kickside.connection:connection` +
   `kickside.contract:component` + `kickside.contract:deletable`, per the
   Minimal Provider Example shape in `04-connections-and-integrations.md`.
-- `cotique.gitlab_provider.client:api` / `:transport` / `:types` /
+- `cotique.gitlab.client:api` / `:transport` / `:types` /
   `:output` / `:data_error` — the low-level REST client layer. `api.lua` is
   **not** a metatable/class object (see "Wippy's type checker and
   metatables" below) — `client:api.new(...)` returns a plain table of
   closures, matching this codebase's own convention (`repo.lua` in the
   original template scaffold, `connection_lib.lua`, etc.).
-- `cotique.gitlab_provider.source:pull_core` — the real, tested pagination +
+- `cotique.gitlab.source:pull_core` — the real, tested pagination +
   fetch + normalize logic. No dependency on the guessed pullable envelope
   (see below).
-- `cotique.gitlab_provider.source:pull_items` / `:pull_keys` — thin wrappers
+- `cotique.gitlab.source:pull_items` / `:pull_keys` — thin wrappers
   around `pull_core`, per the unverified-envelope item below.
-- `cotique.gitlab_provider.source:project_mrs_source` — implements
+- `cotique.gitlab.source:project_mrs_source` — implements
   `kickside.data:pullable` (methods: `pull` only — see the correction
   below).
-- `cotique.gitlab_provider.source:project_mrs` — the
+- `cotique.gitlab.source:project_mrs` — the
   `kickside.automation.port` registry entry.
 
 ### Deliberate deviation from the mirrored `kickside/github` shape:
@@ -272,7 +272,7 @@ found empirically during this build — see below):
   ```
   Error: failed to load state: transaction rejected for registry.commit:
   bound method is not defined in contract definition:
-  cotique.gitlab_provider.source:project_mrs_source binds
+  cotique.gitlab.source:project_mrs_source binds
   kickside.data:pullable.pull_keys
   ```
   A `pull_keys` method was originally inferred from a SEPARATE fact — that
@@ -412,13 +412,13 @@ documented in full because the workaround required is non-obvious)
 
 Setting up the standalone harness exactly per `13-testing.md`/the working
 `cotique/eng-metrics` precedent (`test/.wippy.yaml`'s `workspace.replacements`
-mapping `cotique/gitlab-provider: ..`, `test/src/_index.yaml` declaring the
+mapping `cotique/gitlab: ..`, `test/src/_index.yaml` declaring the
 module itself as an `ns.dependency` purely to route its
 `user_security_scope` requirement through `parameters:`) failed outright on
 a completely fresh harness (no `test/wippy.lock` yet):
 
 ```
-Error: dependency conflicts detected (1): cotique/gitlab-provider@*: list versions: module not found
+Error: dependency conflicts detected (1): cotique/gitlab@*: list versions: module not found
 ```
 
 Isolated through direct, reproducible side-by-side comparison against the
@@ -442,7 +442,7 @@ binary, same session):
   `wippy-windows-amd64.exe` v0.3.35a (2026-09-01, the same "latest" this
   repo's own CI resolves — see `.github/workflows/verify.yml`), deleted
   `test/wippy.lock`, and ran `wippy update` fresh: it correctly logged
-  `scanning dependency source {kind: replacement cotique/gitlab-provider,
+  `scanning dependency source {kind: replacement cotique/gitlab,
   ...}` and `module is replaced by local source; skipping install` on the
   **very first** invocation, no bootstrap dance needed.
 - The globally-installed `wippy.exe` at `C:\Work\Projects\wippy\wippy.exe`
@@ -464,7 +464,7 @@ reproducing this locally on an older CLI needs to do once):
 
 1. Temporarily comment out the `gitlab_provider_harness.dep.module`
    `ns.dependency` entry in `test/src/_index.yaml` (the one referencing
-   `cotique/gitlab-provider`).
+   `cotique/gitlab`).
 2. Run `wippy update` inside `test/` — this succeeds and writes a
    `wippy.lock` covering the other 15 transitive modules (no local
    replacement referenced yet, so nothing needs Hub lookup for an
@@ -597,7 +597,7 @@ confirmation this is a real upstream defect in `kickside/core` as currently
 published, not something introduced by either consuming module.
 
 **Fix:** scoped `Makefile`'s `lint` target to
-`wippy lint --ns "cotique.gitlab_provider.*"`, matching the established
+`wippy lint --ns "cotique.gitlab.*"`, matching the established
 practice from the `eng-metrics` precedent.
 
 ### 7. Same type-checker strictness as #3/#4, hit again rewriting
@@ -622,13 +622,13 @@ implementations' own convention of typing loosely-shaped request/config/
 deps parameters as `any` throughout
 (`providers-master/github/src/source/pull_core.lua`,
 `providers-master/atlassian/src/jira/source/pull_core.lua` both do this
-extensively). `wippy lint --ns "cotique.gitlab_provider.*"` passes clean
+extensively). `wippy lint --ns "cotique.gitlab.*"` passes clean
 after.
 
 ## Deliverable checklist status
 
 - [x] `wippy.yaml` — `description` rewritten; `repository:` fixed (was
-      `github.com/cotique/gitlab-provider`, the module-name-derived default
+      `github.com/cotique/gitlab`, the module-name-derived default
       from `make init`; the real repo is `kickside-gitlab-provider` — caught
       exactly because the shared build brief flagged this as a thing
       `make init` gets wrong, not because it was independently noticed).
@@ -670,7 +670,7 @@ colocate as `<file>_test.lua` next to the source they prove"). Once the
 harness could boot, `wippy test` reported "1 tests in 1 suites" — only the
 harness's own `wiring_test.lua` ran; the three colocated `src/`-level test
 entries never appeared in `wippy registry list --ns
-"cotique.gitlab_provider*"` **at all**, even though nothing in the module's
+"cotique.gitlab*"` **at all**, even though nothing in the module's
 own `wippy.yaml` should exclude them from a workspace-replacement load
 (`exclude_meta: type: [test]` is documented as a publish-time packing
 filter). Empirically, it also filters them out when the module is loaded
@@ -687,7 +687,7 @@ with the source" in practice means "in this module's own `test/` directory,
 which sits next to `src/`," which for a standalone module **is** the
 harness. Moved all three test files into `test/src/` accordingly (imports
 unchanged — they still `require` the module's registry entries by their
-full ids, e.g. `cotique.gitlab_provider.client:output`), and they now run:
+full ids, e.g. `cotique.gitlab.client:output`), and they now run:
 29/29 cases across `data_error_test`, `output_test`, `pull_core_test`, and
 `wiring_test`.
 
@@ -752,3 +752,103 @@ Flagged, not changed (a real decision, not a technical correctness issue):
   `BUSL-1.1`; this module still has the template's default `MIT`. Left
   as-is — which license this repo ships under is the user's call, not
   something to silently match to Wippy's own platform-module convention.
+
+## Renamed module identity: cotique/gitlab-provider -> cotique/gitlab (2026-09-03)
+
+Matching the real reference convention: `kickside/github`, `kickside/atlassian`,
+`kickside/discord` etc. don't carry a `-provider`/`-connector` suffix on the
+module name itself — only this repo's own GitHub repo name
+(`kickside-gitlab-provider`) does, which is unrelated and unchanged. Renamed
+throughout: `wippy.yaml` (`module:`, keywords), `.kickside-module.json`
+identity, the root namespace (`cotique.gitlab_provider` -> `cotique.gitlab`),
+the web-component tag (`cotique-gitlab-provider` -> `cotique-gitlab`), the
+route, every registry entry id under the old namespace, the test harness's
+workspace replacement target and Postgres database name
+(`cotique_test_gitlab_provider` -> `cotique_test_gitlab`), and the CI
+workflow. The GitHub repository URL in `wippy.yaml` (`repository:
+https://github.com/cotique/kickside-gitlab-provider`) is deliberately
+untouched — that identifier is independent of the Wippy module identity and
+was never meant to match it.
+
+Done by a scripted, compound-token-first pass (mirroring
+`scripts/init-module.mjs`'s own replacement strategy: longest/most specific
+tokens first, e.g. `cotique.gitlab_provider` before any bare `gitlab-provider`)
+followed by a manual pass for the remaining bare occurrences, specifically
+to avoid corrupting `kickside-gitlab-provider` (the real GitHub repo name,
+which contains `gitlab-provider` as a substring) with a blind global
+replace.
+
+## Follow-up: the removal above also fixed a real fresh-checkout bootstrap deadlock
+
+While finishing the `cotique/gitlab-provider` -> `cotique/gitlab` rename, a
+from-scratch `test/` bootstrap (no lock, no vendor cache) hard-failed:
+`wippy update` — bare, then again with `--config .wippy.yaml` — both failed
+identically with `cotique/gitlab@*: list versions: module not found`.
+
+Root cause, confirmed by direct comparison and a control test: this
+module's harness declared the module-under-test itself as an explicit root
+`ns.dependency` (`gitlab_harness.dep.module`, wired purely so its own
+`user_security_scope` requirement — the one the now-removed `src/security/`
+declared — could be routed through `parameters:` instead of a raw
+`.wippy.yaml` `override:` path). Once that dependency is declared, `wippy
+update`'s first pass always attempts to resolve it directly against the
+Hub (never published there), fails outright, and — critically — writes no
+lock file at all. The documented two-pass bootstrap workaround (bare `wippy
+update`, then again with `--config .wippy.yaml`) needs the first pass to
+have written *some* lock for the second pass to build on; with none
+written, the second pass fails identically, forever. Confirmed this is not
+specific to this module: reproduces identically against
+`kickside-bitbucket-provider`'s real, merged `main` (same `bdf0085`-style
+fix) and against `cotique/eng-metrics`'s own `main` (read-only check; its
+`wippy.lock` was restored byte-identical afterward, so no lasting effect).
+A control test against a harness shape with no such explicit dependency
+(relying purely on `test/.wippy.yaml`'s `workspace.replacements`) bootstraps
+cleanly from scratch every time.
+
+Since `src/security/` (and the `user_security_scope` requirement it
+declared) is now gone entirely per the removal above, `gitlab_harness.dep.
+module` had no remaining purpose and was deleted outright — the module now
+surfaces purely through the workspace replacement, matching the
+proven-clean shape. `make verify` re-verified from a genuinely fresh state
+(`test/.wippy/vendor`, `test/wippy.lock`, and the root `wippy.lock` all
+deleted first): 33/33 tests on both SQLite and Postgres, lint clean.
+
+## RESOLVED: CI red — a real `wippy test` regression in v0.3.35a, not our fix
+
+After pushing the rename/UI-removal/README work, CI failed at the `test`
+step with `node with ID {cotique.gitlab.source pull_core cotique.gitlab.
+source:pull_core} not found` — a workspace-replaced module's own entries
+not resolving during `wippy test`, even though `wippy update`/`wippy lint`
+resolved the identical graph fine moments earlier in the same job.
+
+Isolated directly, not assumed: downloaded the actual `latest` CLI release
+(`v0.3.35a`, 2026-09-01 — confirmed via `wippy version`) and ran it against
+this exact checkout, from a genuinely fresh state (`test/.wippy/vendor`,
+`test/wippy.lock`, root `wippy.lock` all deleted first):
+
+```
+wippy update            # succeeds, 16 modules resolved
+cd test && wippy update # succeeds, 16 modules resolved
+cd test && wippy test   # FAILS: node with ID {...pull_core...} not found
+```
+
+Then ran the identical sequence, same checkout, same lock, with the
+locally-installed `v0.3.33a` instead — passes clean, 33/33. Confirmed this
+isn't specific to this repo: reproduces identically on
+`kickside-bitbucket-provider` too (different entry, same error shape —
+see that repo's own BUILD-NOTES.md).
+
+This is the third distinct `v0.3.35a+` regression this project's own history
+has hit around workspace-replaced modules (the first two: a raw
+`.wippy.yaml` `override:` path failing to resolve, and the
+explicit-module-dependency bootstrap deadlock documented above) — all three
+share the same shape: something about resolving into a workspace-replaced
+module's own entries changed between `v0.3.33a` and `v0.3.35a`, and it
+doesn't affect every code path equally (`wippy update`/`wippy lint` are
+fine; `wippy test`'s own state-loading is not).
+
+**Fix:** pinned `WIPPY_VERSION: v0.3.33a` in `.github/workflows/verify.yml`
+instead of `latest`, per that file's own stated policy ("set an exact tag
+only to bisect a runtime regression" — this is exactly that case). Not a
+permanent fix — revert to `latest` once a release without this regression
+ships, or re-pin/bisect again if it recurs.
