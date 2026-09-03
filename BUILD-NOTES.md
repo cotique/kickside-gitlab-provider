@@ -642,6 +642,16 @@ Flagged, not changed (a real decision, not a technical correctness issue):
   as-is — which license this repo ships under is the user's call, not
   something to silently match to Wippy's own platform-module convention.
 
+## RESOLVED: removed the UI/api/security apparatus (2026-09-02, later the same session)
+
+Moved to the shared platform findings file
+(`C:\claude\work\wippy\work-wippy\FINDINGS.md`) — see "A credential-only,
+no-picker connection provider needs no `ui/`, `api/`, or `security/`
+folder, no `embed:`, and no `kickside/core` dependency". (This heading's
+full content was lost without a pointer during an earlier documentation
+pass on this file; restored here from the identical finding independently
+confirmed and preserved on the sibling `kickside-bitbucket-provider` repo.)
+
 ## Renamed module identity: cotique/gitlab-provider -> cotique/gitlab (2026-09-03)
 
 Matching the real reference convention: `kickside/github`, `kickside/atlassian`,
