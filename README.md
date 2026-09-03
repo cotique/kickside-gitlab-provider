@@ -1,83 +1,71 @@
-# Kickside Module Template
+# GitLab Connector
 
-A template for an independently versioned Kickside module. It includes a
-registry namespace, typed automation port,
-contract binding, persistence layer, SQLite/PostgreSQL migration, authenticated
-API, module-owned web component, standalone test harness, release checks, and
-the Kickside development handbook.
+Read-only Kickside connector for GitLab — a personal/project access token
+connection provider plus a merge-request pull source for Kickside Data
+Sync. Never creates, updates, merges, comments on, approves, or labels
+anything.
 
-The module builds and tests without a Kickside source checkout. Wippy and
-Node.js are required. Publishing requires a Wippy Hub account.
+See [`src/README.md`](src/README.md) for the module's own auth/layout/planes
+summary (the same content the Wippy Hub's "Read Me" tab shows) and
+[`BUILD-NOTES.md`](BUILD-NOTES.md) for build-time findings — including what's
+confirmed vs. inferred about the `kickside.data:pullable` contract's exact
+envelope, and the real reference source this module was built against.
 
-## Create a repository
+## What this module provides
 
-Create a repository from this GitHub template:
+- `cotique.gitlab.connection:gitlab_connection` — a credential-only
+  `contract.binding` (personal/project access token, optional self-managed
+  `base_url`) implementing `kickside.connection:connection` +
+  `kickside.contract:component` + `kickside.contract:deletable`.
+- `cotique.gitlab.connection:test_connection` / `:discover_resources` —
+  real, live GitLab API calls (`GET /user`, paginated `GET /projects`).
+- `cotique.gitlab.client:api` / `:transport` / `:types` / `:output` /
+  `:data_error` — the low-level REST client layer, empirically-verified
+  pagination/auth mechanics, independently unit-tested.
+- `cotique.gitlab.source:pull_core` — the real, tested merge-request
+  pagination + normalize logic; `:pull_items` is the thin
+  `kickside.data:pullable.pull` wrapper around it.
+- `cotique.gitlab.source:project_mrs_source` implements
+  `kickside.data:pullable`; `cotique.gitlab.source:project_mrs` is the
+  `kickside.automation.port` entry exposing it to Data Sync.
+- `test/` — an isolated standalone harness plus behavioral/wiring suites.
 
-```bash
-gh repo create my-company/invoices \
-  --template wippyai/kickside-module --private --clone
-cd invoices
+This module owns no persistence of its own — Kickside Data Sync's own engine
+owns cursor/lease/schedule/dedup/id-map/sink routing. It ships no web
+component and no custom HTTP endpoint — matches the real reference
+connection providers (`kickside/discord`, `kickside/slack`, etc.) that need
+no custom Connect/picker UI for a credential-only connection; see
+`BUILD-NOTES.md`'s structural audit for what that comparison covered.
 
-make init \
-  ORG=my-company \
-  MODULE_NAME=invoices \
-  TITLE="Invoices" \
-  GITHUB_OWNER=my-company
+Package identity (`organization/module`), registry namespace
+(`namespace:name`), and component instance IDs are different identities. Do
+not derive one from another — the root `ns.definition` (`cotique.gitlab:
+definition`) declares the namespace.
 
-make verify
-```
-
-The initializer changes package identity, root namespace, custom-element tag,
-route, SQL names, test identity, environment prefix, repository metadata, and
-generated bundle metadata together. Re-running it with the same values is a
-no-op; trying to change an initialized checkout fails instead of partially
-renaming it.
-
-Without GitHub CLI, clone the public template, replace its Git remote with your
-own repository, then run the same `make init` command.
+## Development
 
 Install the current Wippy CLI from [Wippy releases](https://hub.wippy.ai/releases)
-and use Node.js 22 or newer. CI verifies the template against the newest
-published CLI on every run (`WIPPY_VERSION: latest` in `.github/workflows`);
-if `make test` ever reports "No tests found", upgrade the local CLI and re-run
-`make setup` so the harness resolves a current `wippy/test`. Confirm both
-tools before starting:
+and Node.js 22 or newer:
 
 ```bash
 wippy version
 node --version
 ```
 
-## Verification
-
-`make verify` runs:
-
-- resolves the module's and the test harness's public Wippy dependencies to
-  their current releases (`wippy update` in both; locks are generated, never
-  committed);
-- installs the UI from `package-lock.json`;
-- validates identity consistency, documentation links, dependency ranges,
-  generated files, frontend registry metadata, and secret hygiene;
-- tests the initializer itself in a disposable copy;
-- runs Wippy lint;
-- runs strict Vue/TypeScript checking and the production web-component build;
-- boots the standalone harness on in-memory SQLite and runs every test.
-
-PostgreSQL is a separate explicit matrix:
-
 ```bash
+make verify        # resolves deps, lints, runs the standalone test suite on SQLite
 make postgres-up
-make test-pg
+make test-pg        # same suite against PostgreSQL
 make postgres-down
 ```
 
-The Docker database is test-only and disposable. Production credentials never
-belong in this repository.
+CI pins an exact Wippy CLI version (`WIPPY_VERSION` in
+`.github/workflows/verify.yml`) rather than tracking `latest` — see
+`BUILD-NOTES.md` for the confirmed regression that forced that pin.
 
 ## Publish to the Wippy Hub
 
-Publishing requires a Wippy account with access to the organization selected
-by `ORG`:
+Publishing requires a Wippy account with access to the `cotique` organization:
 
 ```bash
 wippy auth login
@@ -86,23 +74,16 @@ make release-check
 make publish
 ```
 
-`make publish` creates a private plugin by default and embeds the built UI.
-To publish publicly:
+`make publish` creates a private plugin by default. To publish publicly:
 
 ```bash
 make publish VIS=public
 ```
 
-The source manifest does not pin a release version. The publisher selects the
-next valid version; published releases remain immutable. Runtime dependencies
-use compatibility constraints, while `wippy.lock` files carry exact resolved
-artifacts for reproducible execution.
+The source manifest does not pin a release version — the publisher selects
+the next valid version on the Hub; published releases remain immutable.
 
-After publishing, install the module from Kickside's System → Hub page. The
-host infers application-owned requirements; users are asked for
-deployment-specific choices.
-
-## Mount the module in a Kickside host
+## Mount in a Kickside host
 
 Bootstrap Kickside in a separate directory (first boot runs clean, without
 the overlay, so the resolved graph and admin account exist):
@@ -125,16 +106,13 @@ Stop it once it settles, then create the untracked
 version: "1.0"
 workspace:
   replacements:
-    my-company/invoices: ../invoices
+    cotique/gitlab: ../kickside-gitlab-provider
 override:
-  "app.env:defaults:values.GOV_MANAGED_NAMESPACES": "my_company.invoices"
-  "my_company.invoices.security:user_security_scope:default": app.security:user
+  "app.env:defaults:values.GOV_MANAGED_NAMESPACES": "cotique.gitlab"
 ```
 
-The `user_security_scope` line binds the module's security requirement to the
-application's authenticated-user group; without it every module endpoint
-returns 403. Restart the host from its directory with the overlay (bare
-`wippy run` reads the locked graph; keep the same profiles and vars):
+Restart the host from its directory with the overlay (bare `wippy run` reads
+the locked graph; keep the same profiles and vars):
 
 ```bash
 wippy run --config .wippy.workspace.yaml -c \
@@ -148,66 +126,10 @@ wippy run --config .wippy.workspace.yaml -c \
 The full loop, including Keeper-driven reactive development, is documented in
 [The Dev Loop](docs/kickside-development/14-dev-loop.md).
 
-The host stays source-free: its lock and vendor packs belong to the deployment;
-your module checkout is the only local source. Never add local replacements to
-`wippy.lock` and never point Keeper's application filesystem sync at a
-conventional module `src/` tree.
-
-## Included vertical slice
-
-`cotique/gitlab` is a read-only GitLab connection provider plus a
-merge-request pull source for Kickside Data Sync — never creates, updates,
-merges, comments on, approves, or labels anything:
-
-- `cotique.gitlab:definition` is the authoritative root `ns.definition`.
-- `cotique.gitlab.connection:gitlab_connection` is the credential-only
-  `contract.binding` (personal/project access token, optional self-managed
-  `base_url`) implementing `kickside.connection:connection` +
-  `kickside.contract:component` + `kickside.contract:deletable`.
-- `cotique.gitlab.connection:test_connection` / `:discover_resources`
-  make real, live GitLab API calls (`GET /user`, paginated `GET /projects`).
-- `cotique.gitlab.client:api` / `:transport` / `:types` / `:output` /
-  `:data_error` are the low-level REST client layer — empirically-verified
-  pagination/auth mechanics, independently unit-tested.
-- `cotique.gitlab.source:pull_core` is the real, tested merge-request
-  pagination + normalize logic; `:pull_items` is the thin
-  `kickside.data:pullable.pull` wrapper around it.
-- `cotique.gitlab.source:project_mrs_source` implements
-  `kickside.data:pullable`; `cotique.gitlab.source:project_mrs` is
-  the `kickside.automation.port` entry exposing it to Data Sync.
-- `cotique.gitlab.api:get_status.endpoint` exposes authenticated
-  module status (this module owns no persistence of its own — Data Sync's
-  engine owns cursor/lease/schedule/dedup/id-map/sink routing).
-- `cotique.gitlab:gitlab_view` publishes an announced,
-  auto-registered Wippy web component served by the module's own embedded
-  filesystem.
-- `test/` supplies an isolated host and behavioral/wiring suites.
-
-See `BUILD-NOTES.md` for what's confirmed vs. inferred about the
-`kickside.data:pullable` contract's exact envelope, and for other build-time
-findings.
-
-Package identity (`organization/module`), registry namespace
-(`namespace:name`), and component instance IDs are different identities. Do
-not derive one from another. The root `ns.definition` declares the namespace.
-
-## Capability coverage
-
-- The source includes a `contract.binding` sink implementing
-  `kickside.data:writable`.
-- The source includes a destination `kickside.automation.port` that addresses
-  that sink.
-- Durable events, thread append calls, projections, and realtime wakeups are
-  documented in [Threads, Events, And Projections](docs/kickside-development/03-threads-events-projections.md).
-- Block declarations, schemas, lowering, output ports, nested Flows, waits,
-  signals, and the optional visual Workflow layer are documented in
-  [Blocks, Flows, Workflows, And Ports](docs/kickside-development/18-blocks-flows-workflows.md).
-- Contract definitions, bindings, sources, destinations, pullable stores, and
-  writable sinks are documented in
-  [Contracts And Ports](docs/kickside-development/02-contracts-and-ports.md).
-
-The template does not add event, Block, Dataflow, or visual Workflow
-dependencies until the module uses those contracts.
+The host stays source-free: its lock and vendor packs belong to the
+deployment; your module checkout is the only local source. Never add local
+replacements to `wippy.lock` and never point Keeper's application filesystem
+sync at a conventional module `src/` tree.
 
 ## Repository map
 
@@ -217,19 +139,15 @@ AGENTS.md                     development instructions
 scripts/                      initializer and deterministic validation
 wippy.yaml                    publish manifest; no fixed release version
 src/                          registry declarations and Lua implementation
-ui/                           source for the Wippy web component
-static/                       generated, committed publish artifact
 test/                         standalone Wippy harness; lock generated by setup
 compose.test.yaml             disposable PostgreSQL matrix
 docs/kickside-development/    Kickside developer Wiki snapshot
-.github/workflows/verify.yml  Linux SQLite + PostgreSQL + frontend CI
+.github/workflows/verify.yml  Linux SQLite + PostgreSQL CI
 ```
 
 Start with [AGENTS.md](AGENTS.md), even when you are not using an agent. The
 handbook begins at
-[Developer Handbook](docs/kickside-development/developer-handbook.md); frontend
-work begins at
-[Frontend Handbook](docs/kickside-development/frontend/frontend-handbook.md).
+[Developer Handbook](docs/kickside-development/developer-handbook.md).
 
 ## Rules
 
@@ -242,15 +160,11 @@ work begins at
   contract.
 - Never manufacture actor scope. Execution inherits the calling actor.
 - Never synchronously drive thread projections from a read endpoint.
-- Build UI from `ui/src`; do not hand-edit `static/`.
-- Use Wippy theme tokens and host APIs; no hardcoded deployment paths, raw
-  proxy wires, fake `--p-*` colors, or unowned host styling.
-- A change is complete only after SQLite, PostgreSQL, frontend, package, and
-  secret checks pass in proportion to what changed.
+- A change is complete only after SQLite, PostgreSQL, and secret checks pass
+  in proportion to what changed.
 
 ## Documentation provenance
 
-The bundled handbook is a public, offline-readable snapshot of the published
+The bundled handbook (`docs/kickside-development/`) is a public,
+offline-readable snapshot of the published
 [Kickside Wiki](https://hub.wippy.ai/kickside/kickside/wiki/docs/kickside-development/developer-handbook.md).
-The template repository is linked from that Wiki so agents can move between
-the executable example and the current published guidance.
