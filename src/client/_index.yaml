@@ -1,8 +1,8 @@
 version: "1.0"
-namespace: cotique.gitlab_provider.client
+namespace: cotique.gitlab.client
 
 entries:
-  # cotique.gitlab_provider.client:types
+  # cotique.gitlab.client:types
   - name: types
     kind: library.lua
     meta:
@@ -10,7 +10,7 @@ entries:
     source: file://types.lua
     modules: []
 
-  # cotique.gitlab_provider.client:output
+  # cotique.gitlab.client:output
   - name: output
     kind: library.lua
     meta:
@@ -18,7 +18,7 @@ entries:
     source: file://output.lua
     modules: []
 
-  # cotique.gitlab_provider.client:data_error
+  # cotique.gitlab.client:data_error
   - name: data_error
     kind: library.lua
     meta:
@@ -27,7 +27,7 @@ entries:
     modules:
       - json
 
-  # cotique.gitlab_provider.client:api
+  # cotique.gitlab.client:api
   - name: api
     kind: library.lua
     meta:
@@ -37,9 +37,9 @@ entries:
       - http_client
       - json
     imports:
-      data_error: cotique.gitlab_provider.client:data_error
+      data_error: cotique.gitlab.client:data_error
 
-  # cotique.gitlab_provider.client:transport
+  # cotique.gitlab.client:transport
   - name: transport
     kind: library.lua
     meta:
@@ -48,8 +48,8 @@ entries:
     modules: []
     imports:
       component: kickside.component:component
-      api: cotique.gitlab_provider.client:api
-      types: cotique.gitlab_provider.client:types
+      api: cotique.gitlab.client:api
+      types: cotique.gitlab.client:types
 
   # Unit tests for this namespace's libraries (output, data_error) live in
   # the standalone harness (test/src/output_test.lua, test/src/data_error_test.lua),

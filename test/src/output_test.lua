@@ -5,7 +5,7 @@ local test = require("test")
 local output = require("output")
 
 local function define_tests()
-    test.describe("cotique.gitlab_provider.client output redaction", function()
+    test.describe("cotique.gitlab.client output redaction", function()
         test.it("redacts a top-level token field", function()
             local redacted = output.redact({ token = "fake-token-fixture-value", base_url = "https://gitlab.com" })
             test.eq(redacted.token, output.REDACTED)

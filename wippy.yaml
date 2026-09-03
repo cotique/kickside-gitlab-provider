@@ -1,5 +1,5 @@
 organization: cotique
-module: gitlab-provider
+module: gitlab
 type: plugin
 description: Read-only GitLab connector — personal/project access token connection provider (test_connection, discover_resources) and a merge-request pull source for Kickside Data Sync.
 # Pick the license your distribution requires (kickside platform modules use BUSL-1.1).
@@ -8,9 +8,7 @@ repository: https://github.com/cotique/kickside-gitlab-provider
 homepage: https://wippy.ai
 keywords:
   - kickside
-  - gitlab-provider
-embed:
-  - cotique.gitlab_provider:ui_fs
+  - gitlab
 exclude_meta:
   type:
     - test

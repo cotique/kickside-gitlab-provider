@@ -8,7 +8,7 @@ local test = require("test")
 local data_error = require("data_error")
 
 local function define_tests()
-    test.describe("cotique.gitlab_provider.client data_error", function()
+    test.describe("cotique.gitlab.client data_error", function()
         test.it("failure() builds the full envelope, coercing retriable to an exact boolean", function()
             local err_true = data_error.failure("x", "y", true, "z")
             test.eq(err_true.success, false)

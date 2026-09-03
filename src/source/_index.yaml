@@ -1,8 +1,8 @@
 version: "1.0"
-namespace: cotique.gitlab_provider.source
+namespace: cotique.gitlab.source
 
 entries:
-  # cotique.gitlab_provider.source:pull_core
+  # cotique.gitlab.source:pull_core
   - name: pull_core
     kind: library.lua
     meta:
@@ -11,16 +11,16 @@ entries:
     modules:
       - ctx
     imports:
-      data_error: cotique.gitlab_provider.client:data_error
-      types: cotique.gitlab_provider.client:types
-      api: cotique.gitlab_provider.client:api
-      transport: cotique.gitlab_provider.client:transport
+      data_error: cotique.gitlab.client:data_error
+      types: cotique.gitlab.client:types
+      api: cotique.gitlab.client:api
+      transport: cotique.gitlab.client:transport
 
   # pull_core's own unit tests live in the standalone harness
   # (test/src/pull_core_test.lua), not colocated in this src/ tree — see
   # client/_index.yaml's comment and BUILD-NOTES.md.
 
-  # cotique.gitlab_provider.source:pull_items
+  # cotique.gitlab.source:pull_items
   # Envelope CONFIRMED against the real, unpacked kickside/github and
   # kickside/atlassian reference implementations — see BUILD-NOTES.md,
   # "kickside.data:pullable's exact envelope — RESOLVED". Thin wrapper; all
@@ -32,11 +32,11 @@ entries:
     source: file://pull_items.lua
     modules: []
     imports:
-      pull_core: cotique.gitlab_provider.source:pull_core
-      data_error: cotique.gitlab_provider.client:data_error
+      pull_core: cotique.gitlab.source:pull_core
+      data_error: cotique.gitlab.client:data_error
     method: pull
 
-  # cotique.gitlab_provider.source:pull_keys
+  # cotique.gitlab.source:pull_keys
   # NOT bound to kickside.data:pullable — that contract binds only "pull"
   # (empirically confirmed at boot by the platform's own contract-binding
   # validator; see BUILD-NOTES.md). Wired instead through the
@@ -51,11 +51,11 @@ entries:
     source: file://pull_keys.lua
     modules: []
     imports:
-      pull_core: cotique.gitlab_provider.source:pull_core
-      data_error: cotique.gitlab_provider.client:data_error
+      pull_core: cotique.gitlab.source:pull_core
+      data_error: cotique.gitlab.client:data_error
     method: pull_keys
 
-  # cotique.gitlab_provider.source:project_mrs_source
+  # cotique.gitlab.source:project_mrs_source
   # Implements kickside.data:pullable. context_required: [component_id] is
   # CONFIRMED, not inferred — the real, unpacked kickside/github reference
   # binding (providers-master/github/src/source/_index.yaml's
@@ -84,9 +84,9 @@ entries:
       - contract: kickside.data:pullable
         context_required: [component_id]
         methods:
-          pull: cotique.gitlab_provider.source:pull_items
+          pull: cotique.gitlab.source:pull_items
 
-  # cotique.gitlab_provider.source:project_mrs
+  # cotique.gitlab.source:project_mrs
   # kickside.automation.port entry. `reconcile: { pull_keys: ... }`
   # (sibling to `binding:`) and the explicit `connection_id` config_schema
   # field are CONFIRMED, not inferred — copied exactly from the real,
@@ -104,9 +104,9 @@ entries:
       title: GitLab Merge Requests
       comment: Merge requests for a selected GitLab project, as a Data Sync pull source.
       icon: tabler:brand-gitlab
-    binding: cotique.gitlab_provider.source:project_mrs_source
+    binding: cotique.gitlab.source:project_mrs_source
     reconcile:
-      pull_keys: cotique.gitlab_provider.source:pull_keys
+      pull_keys: cotique.gitlab.source:pull_keys
     config_schema:
       connection_id:
         picker: kickside-connection-trait-picker

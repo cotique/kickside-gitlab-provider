@@ -1,7 +1,7 @@
 version: "1.0"
 namespace: app
 
-# Standalone harness for cotique/gitlab-provider. This module owns no
+# Standalone harness for cotique/gitlab. This module owns no
 # migrations/persistence of its own (kickside.data:pullable's own doc
 # comment: "Engine owns cursor, lease, schedule, dedup, id-map, and sink
 # routing" — see BUILD-NOTES.md). app:db is still provided here because the
@@ -23,14 +23,14 @@ entries:
       type: test
       comment: Connection binding, pull source, endpoint, view, nav, and security entries exist and reference each other consistently.
       group: GitLab Connector
-      suite: cotique_gitlab_provider
+      suite: cotique_gitlab
     source: file://wiring_test.lua
     modules: [registry]
     imports:
       test: wippy.test:test
     method: run
 
-  # cotique.gitlab_provider.client:output's unit tests. Colocated in this
+  # cotique.gitlab.client:output's unit tests. Colocated in this
   # harness rather than in the module's own src/ tree — the module's
   # exclude_meta: type: [test] strips meta.type: test entries even when
   # loaded via workspace replacement, not just at publish time (see
@@ -41,27 +41,27 @@ entries:
       type: test
       comment: Credential redaction actually redacts known-sensitive keys, nested and case-insensitively, without mutating the input.
       group: GitLab Connector
-      suite: cotique_gitlab_provider
+      suite: cotique_gitlab
     source: file://output_test.lua
     modules: []
     imports:
       test: wippy.test:test
-      output: cotique.gitlab_provider.client:output
+      output: cotique.gitlab.client:output
     method: run
 
-  # cotique.gitlab_provider.client:data_error's unit tests.
+  # cotique.gitlab.client:data_error's unit tests.
   - name: data_error_test
     kind: function.lua
     meta:
       type: test
       comment: HTTP/transport failures map onto the confirmed { code, message, retriable, scope } envelope shape.
       group: GitLab Connector
-      suite: cotique_gitlab_provider
+      suite: cotique_gitlab
     source: file://data_error_test.lua
     modules: []
     imports:
       test: wippy.test:test
-      data_error: cotique.gitlab_provider.client:data_error
+      data_error: cotique.gitlab.client:data_error
     method: run
 
   # Harness-local copy of kickside.automation.testing:pullable_conformance,
@@ -77,7 +77,7 @@ entries:
     source: file://pullable_conformance.lua
     modules: [registry, json]
 
-  # cotique.gitlab_provider.source:pull_core's unit tests — the real,
+  # cotique.gitlab.source:pull_core's unit tests — the real,
   # pagination + normalization logic, tested against a fake client:api — plus
   # the pullable conformance kit run offline against a fake client (see
   # pullable_conformance above).
@@ -87,12 +87,12 @@ entries:
       type: test
       comment: Pagination walk (multi-page, stop-on-exhaustion, per-call cap + resumable cursor), item envelope, table cursor, field normalization, stable-key generation, and component_id fallback chain against a fake client:api — no real network call. Also runs the pullable conformance kit offline.
       group: GitLab Connector
-      suite: cotique_gitlab_provider
+      suite: cotique_gitlab
     source: file://pull_core_test.lua
     modules: []
     imports:
       test: wippy.test:test
-      pull_core: cotique.gitlab_provider.source:pull_core
+      pull_core: cotique.gitlab.source:pull_core
       conformance: app:pullable_conformance
     method: run
 
@@ -156,17 +156,17 @@ entries:
       effect: allow
 
   # The harness source is the lock root. Its .wippy.yaml replaces the declared
-  # cotique/gitlab-provider dependency with ../ so the module's canonical source and
+  # cotique/gitlab dependency with ../ so the module's canonical source and
   # colocated tests load directly without a lock-file replacement.
 
-  - name: gitlab_provider_harness.dep.contract
+  - name: gitlab_harness.dep.contract
     version: "*"
     kind: ns.dependency
     meta:
       comment: Shared contract definitions imported by the replacement module under test.
     component: "kickside/contract"
 
-  - name: gitlab_provider_harness.dep.component
+  - name: gitlab_harness.dep.component
     version: "*"
     kind: ns.dependency
     meta:
@@ -180,7 +180,7 @@ entries:
       - name: kickside.component.security:user_security_scope
         value: app:user
 
-  - name: gitlab_provider_harness.dep.connection
+  - name: gitlab_harness.dep.connection
     version: "*"
     kind: ns.dependency
     meta:
@@ -203,7 +203,7 @@ entries:
   # registry show` cannot reveal each requirement's actual default, so this
   # list was confirmed empirically by iterating `wippy test` until boot
   # passed — see BUILD-NOTES.md).
-  - name: gitlab_provider_harness.dep.core
+  - name: gitlab_harness.dep.core
     version: "*"
     kind: ns.dependency
     meta:
@@ -262,7 +262,7 @@ entries:
   # kickside/uploads — further transitive dependency (pulled in by
   # kickside/core), not something this module needs conceptually; wired only
   # so the harness boots. See BUILD-NOTES.md.
-  - name: gitlab_provider_harness.dep.uploads
+  - name: gitlab_harness.dep.uploads
     version: "*"
     kind: ns.dependency
     meta:
@@ -285,7 +285,7 @@ entries:
   # wippy/session — further transitive dependency (pulled in by
   # kickside/core), not something this module needs conceptually; wired only
   # so the harness boots. See BUILD-NOTES.md.
-  - name: gitlab_provider_harness.dep.session
+  - name: gitlab_harness.dep.session
     version: "*"
     kind: ns.dependency
     meta:
@@ -304,7 +304,7 @@ entries:
   # wippy/views — further transitive dependency (pulled in by
   # kickside/core), not something this module needs conceptually; wired only
   # so the harness boots. See BUILD-NOTES.md.
-  - name: gitlab_provider_harness.dep.views
+  - name: gitlab_harness.dep.views
     version: "*"
     kind: ns.dependency
     meta:
@@ -318,14 +318,14 @@ entries:
       - name: wippy.views:server
         value: app:gateway
 
-  - name: gitlab_provider_harness.dep.security
+  - name: gitlab_harness.dep.security
     version: "*"
     kind: ns.dependency
     meta:
       comment: Platform security groups (wippy.security:process) that give host-managed services their policy scope under strict mode.
     component: "wippy/security"
 
-  - name: gitlab_provider_harness.dep.bootloader
+  - name: gitlab_harness.dep.bootloader
     version: "*"
     kind: ns.dependency
     meta:
@@ -336,19 +336,3 @@ entries:
         value: app:processes
       - name: wippy.bootloader:env_storage
         value: app:env_storage
-
-  # Wires the module-under-test's own user_security_scope requirement through
-  # the parameters: pipeline stage instead of a raw .wippy.yaml override: path
-  # targeting an entry inside the workspace-replaced module — that override
-  # form stopped resolving on Wippy runtime v0.3.35a+ ("no entry found for
-  # ...") even though parameters: on a declared ns.dependency for the exact
-  # same entry resolves fine. See BUILD-NOTES.md.
-  - name: gitlab_provider_harness.dep.module
-    version: "*"
-    kind: ns.dependency
-    meta:
-      comment: The module under test itself, purely so its user_security_scope requirement can be wired through parameters:.
-    component: "cotique/gitlab-provider"
-    parameters:
-      - name: cotique.gitlab_provider.security:user_security_scope
-        value: app:user

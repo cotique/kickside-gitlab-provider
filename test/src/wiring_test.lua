@@ -1,28 +1,23 @@
--- Registry-shape test for the connection binding, pull source, and HTTP/UI
--- surfaces. The harness does not call its router or gateway, so these are
+-- Registry-shape test for the connection binding and pull source. This
+-- module ships no web component, no custom HTTP endpoint, and no security
+-- policy of its own — matches the real reference provider modules
+-- (kickside/discord, kickside/slack, etc.; see BUILD-NOTES.md "structural
+-- audit"). The harness does not call its router or gateway, so these are
 -- verified as registry wiring: every entry exists and the cross-references
 -- line up.
 local test = require("test")
 local registry = require("registry")
 
-local CONNECTION_ID = "cotique.gitlab_provider.connection:gitlab_connection"
-local GET_STATUS_ID = "cotique.gitlab_provider.connection:get_status"
-local DELETE_ID = "cotique.gitlab_provider.connection:delete"
-local TEST_CONNECTION_ID = "cotique.gitlab_provider.connection:test_connection"
-local DISCOVER_ID = "cotique.gitlab_provider.connection:discover_resources"
+local CONNECTION_ID = "cotique.gitlab.connection:gitlab_connection"
+local GET_STATUS_ID = "cotique.gitlab.connection:get_status"
+local DELETE_ID = "cotique.gitlab.connection:delete"
+local TEST_CONNECTION_ID = "cotique.gitlab.connection:test_connection"
+local DISCOVER_ID = "cotique.gitlab.connection:discover_resources"
 
-local SOURCE_BINDING_ID = "cotique.gitlab_provider.source:project_mrs_source"
-local PULL_ITEMS_ID = "cotique.gitlab_provider.source:pull_items"
-local PULL_KEYS_ID = "cotique.gitlab_provider.source:pull_keys"
-local PORT_ID = "cotique.gitlab_provider.source:project_mrs"
-
-local HANDLER_ID = "cotique.gitlab_provider.api:get_status"
-local ENDPOINT_ID = "cotique.gitlab_provider.api:get_status.endpoint"
-local VIEW_ID = "cotique.gitlab_provider:gitlab_provider_view"
-local NAV_ID = "cotique.gitlab_provider:nav_item"
-local STATIC_ID = "cotique.gitlab_provider:ui_static"
-local FS_ID = "cotique.gitlab_provider:ui_fs"
-local POLICY_ID = "cotique.gitlab_provider.security:gitlab_provider_endpoint_access"
+local SOURCE_BINDING_ID = "cotique.gitlab.source:project_mrs_source"
+local PULL_ITEMS_ID = "cotique.gitlab.source:pull_items"
+local PULL_KEYS_ID = "cotique.gitlab.source:pull_keys"
+local PORT_ID = "cotique.gitlab.source:project_mrs"
 
 local function get(id)
     local entry, err = registry.get(id)
@@ -51,7 +46,7 @@ local function qualify(ref, ns)
 end
 
 local function define_tests()
-    test.describe("cotique.gitlab_provider surface wiring", function()
+    test.describe("cotique.gitlab surface wiring", function()
         test.it("declares the connection binding with the canonical credential-only shape", function()
             local binding = get(CONNECTION_ID)
             local meta = meta_of(binding)
@@ -84,20 +79,20 @@ local function define_tests()
 
             local component_contract = seen["kickside.contract:component"]
             test.not_nil(component_contract, "must implement kickside.contract:component")
-            test.eq(qualify(component_contract.methods.get_status, "cotique.gitlab_provider.connection"), GET_STATUS_ID)
+            test.eq(qualify(component_contract.methods.get_status, "cotique.gitlab.connection"), GET_STATUS_ID)
 
             local connection_contract = seen["kickside.connection:connection"]
             test.not_nil(connection_contract, "must implement kickside.connection:connection")
             test.not_nil(connection_contract.context_required, "connection contract methods require context_required: [component_id]")
             test.eq(connection_contract.context_required[1], "component_id")
-            test.eq(qualify(connection_contract.methods.get_status, "cotique.gitlab_provider.connection"), GET_STATUS_ID)
-            test.eq(qualify(connection_contract.methods.test_connection, "cotique.gitlab_provider.connection"), TEST_CONNECTION_ID)
-            test.eq(qualify(connection_contract.methods.discover_resources, "cotique.gitlab_provider.connection"), DISCOVER_ID)
+            test.eq(qualify(connection_contract.methods.get_status, "cotique.gitlab.connection"), GET_STATUS_ID)
+            test.eq(qualify(connection_contract.methods.test_connection, "cotique.gitlab.connection"), TEST_CONNECTION_ID)
+            test.eq(qualify(connection_contract.methods.discover_resources, "cotique.gitlab.connection"), DISCOVER_ID)
 
             local deletable_contract = seen["kickside.contract:deletable"]
             test.not_nil(deletable_contract, "must implement kickside.contract:deletable")
             test.eq(deletable_contract.context_required[1], "component_id")
-            test.eq(qualify(deletable_contract.methods.delete, "cotique.gitlab_provider.connection"), DELETE_ID)
+            test.eq(qualify(deletable_contract.methods.delete, "cotique.gitlab.connection"), DELETE_ID)
         end)
 
         test.it("get_status and delete are backed by real function entries", function()
@@ -116,7 +111,7 @@ local function define_tests()
             end
             local pullable = seen["kickside.data:pullable"]
             test.not_nil(pullable, "must implement kickside.data:pullable")
-            test.eq(qualify(pullable.methods.pull, "cotique.gitlab_provider.source"), PULL_ITEMS_ID)
+            test.eq(qualify(pullable.methods.pull, "cotique.gitlab.source"), PULL_ITEMS_ID)
             -- kickside.data:pullable binds ONLY "pull" — empirically
             -- confirmed by the platform's own contract-binding validator
             -- (see BUILD-NOTES.md "OPEN: kickside.data:pullable's exact
@@ -135,7 +130,7 @@ local function define_tests()
             test.eq(meta.type, "kickside.automation.port")
 
             local decl = data_of(port)
-            test.eq(qualify(decl.binding, "cotique.gitlab_provider.source"), SOURCE_BINDING_ID)
+            test.eq(qualify(decl.binding, "cotique.gitlab.source"), SOURCE_BINDING_ID)
             test.not_nil(decl.config_schema, "port must declare config_schema")
             test.not_nil(decl.config_schema.project_id, "config_schema must let the caller select a project")
             test.not_nil(decl.output_schema, "port must declare output_schema for the normalized item shape")
@@ -150,7 +145,7 @@ local function define_tests()
             -- BUILD-NOTES.md, "kickside.data:pullable's exact envelope —
             -- RESOLVED".
             test.not_nil(decl.reconcile, "port must declare reconcile for Data Sync's keys-only reconcile hook")
-            test.eq(qualify(decl.reconcile.pull_keys, "cotique.gitlab_provider.source"), PULL_KEYS_ID)
+            test.eq(qualify(decl.reconcile.pull_keys, "cotique.gitlab.source"), PULL_KEYS_ID)
 
             -- connection_id is an explicit config_schema field, confirmed
             -- against the real reference's identical shape (picker:
@@ -164,48 +159,6 @@ local function define_tests()
             test.eq(connection_id_field.provider, "gitlab")
         end)
 
-        test.it("pairs the status endpoint with its handler on the router token", function()
-            get(HANDLER_ID)
-            local ep = data_of(get(ENDPOINT_ID))
-            test.eq(qualify(ep.func, "cotique.gitlab_provider.api"), HANDLER_ID)
-            test.eq(ep.method, "GET")
-            test.eq(ep.path, "/gitlab-provider/status")
-            test.eq(meta_of(get(ENDPOINT_ID)).router, "app:api")
-        end)
-
-        test.it("declares a view served by the module's own static mount", function()
-            local view = meta_of(get(VIEW_ID))
-            test.eq(view.type, "view.component")
-            test.eq(view.tag_name, "cotique-gitlab-provider")
-            test.eq(view.entry_point, "index.js")
-            test.eq(view.announced, true)
-            test.eq(view.auto_register, true)
-
-            local static = get(STATIC_ID)
-            test.eq(data_of(static).path, "/" .. view.base_path)
-            test.eq(qualify(data_of(static).fs, "cotique.gitlab_provider"), FS_ID)
-            get(FS_ID)
-        end)
-
-        test.it("mounts the view in the app nav by tag", function()
-            local nav = meta_of(get(NAV_ID))
-            test.eq(nav.type, "ui.nav_item")
-            test.eq(nav.path, "/gitlab-provider")
-            test.eq(nav.render, "component")
-            test.eq(nav.component_tag, meta_of(get(VIEW_ID)).tag_name)
-        end)
-
-        test.it("gates the api namespace behind the injectable access policy", function()
-            local policy = data_of(get(POLICY_ID))
-            local resources = policy.policy and policy.policy.resources
-            test.not_nil(resources, "policy must list resources")
-            if type(resources) == "string" then resources = { resources } end
-            local covered = false
-            for _, r in ipairs(resources) do
-                if r == "cotique.gitlab_provider.api:*" then covered = true end
-            end
-            test.is_true(covered, "policy must cover cotique.gitlab_provider.api:*")
-        end)
     end)
 end
 
