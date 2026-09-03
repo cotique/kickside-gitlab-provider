@@ -21,11 +21,11 @@ entries:
     kind: function.lua
     meta:
       type: test
-      comment: Connection binding, pull source, endpoint, view, nav, and security entries exist and reference each other consistently.
+      comment: Connection binding, pull source, endpoint, view, nav, security, and agent-tool trait entries exist and reference each other consistently.
       group: GitLab Connector
       suite: cotique_gitlab
     source: file://wiring_test.lua
-    modules: [registry]
+    modules: [registry, json]
     imports:
       test: wippy.test:test
     method: run
@@ -94,6 +94,26 @@ entries:
       test: wippy.test:test
       pull_core: cotique.gitlab.source:pull_core
       conformance: app:pullable_conformance
+    method: run
+
+  # cotique.gitlab.traits:read_tool/:write_tool handler behavior — validation,
+  # dispatch, error surfacing — against a fake client:api, no real network
+  # call. Registry-shape assertions for the same traits live in wiring_test
+  # above instead.
+  - name: traits_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: GitLabRead/GitLabWrite tool handlers — action validation, pull_core reuse on the read side, request-body shaping (labels/state_event) and response normalization on the write side, and error surfacing (including the real data_error 403 -> permission_denied mapping) — against a fake client:api, no real network call.
+      group: GitLab Connector
+      suite: cotique_gitlab
+    source: file://traits_test.lua
+    modules: [json]
+    imports:
+      test: wippy.test:test
+      data_error: cotique.gitlab.client:data_error
+      read_tool: cotique.gitlab.traits:read_tool_lib
+      write_tool: cotique.gitlab.traits:write_tool_lib
     method: run
 
   - name: db

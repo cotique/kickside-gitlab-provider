@@ -1,7 +1,7 @@
 organization: cotique
 module: gitlab
 type: plugin
-description: Read-only GitLab connector — personal/project access token connection provider (test_connection, discover_resources) and a merge-request pull source for Kickside Data Sync.
+description: GitLab connector — personal/project access token connection provider (test_connection, discover_resources), a merge-request pull source for Kickside Data Sync, and agent-tool traits (reader/writer/manager) for reading and creating/updating merge requests and notes.
 # Pick the license your distribution requires (kickside platform modules use BUSL-1.1).
 license: MIT
 repository: https://github.com/cotique/kickside-gitlab-provider

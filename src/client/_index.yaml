@@ -14,9 +14,10 @@ entries:
   - name: output
     kind: library.lua
     meta:
-      comment: Safe output encoding — redacts token/base_url-adjacent secrets from anything that could be logged.
+      comment: Safe output encoding — redacts token/base_url-adjacent secrets from anything that could be logged, plus M.encode (added for the v2 write-access agent traits) for redacted+truncated JSON tool output.
     source: file://output.lua
-    modules: []
+    modules:
+      - json
 
   # cotique.gitlab.client:data_error
   - name: data_error
@@ -31,7 +32,7 @@ entries:
   - name: api
     kind: library.lua
     meta:
-      comment: Low-level GitLab REST client — builds requests, sets the PRIVATE-TOKEN header, parses JSON, maps non-2xx/transport failures through data_error.
+      comment: Low-level GitLab REST client — builds requests, sets the PRIVATE-TOKEN header, parses JSON, maps non-2xx/transport failures through data_error. client.get is empirically verified against live gitlab.com calls; client.post/client.put (added for the v2 write-access agent traits, src/traits/) are built against GitLab's current documented REST API shapes, not live-verified — see BUILD-NOTES.md.
     source: file://api.lua
     modules:
       - http_client

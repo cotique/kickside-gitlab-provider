@@ -71,10 +71,16 @@ entries:
       group: Developer
       class:
         - connection
-      # Read-only per eng-metrics SPEC.md decision B0 (see the shared build
-      # brief) — the help text on `token` requests the narrowest scope
-      # GitLab's own token model offers instead of relying on a broad
-      # default scope.
+      # Same token field serves both the read-only pull source (see
+      # eng-metrics SPEC.md decision B0) and the v2 write-access agent
+      # traits (src/traits/) — no separate credential field or scope
+      # selector for write, per the shared build brief: the module never
+      # checks or enforces scope up front, a write call against a
+      # read_api-scoped token simply fails with a real 403 from GitLab,
+      # mapped through the existing data_error permission_denied taxonomy.
+      # The help text below asks for the broadest scope a caller might need
+      # (api, for write) while noting read_api is enough when only the
+      # read-only reader trait / pull source will ever be used.
       credential_schema:
         version: "1.0"
         submit_label: Connect
@@ -84,7 +90,7 @@ entries:
             type: password
             required: true
             placeholder: glpat-...
-            help: "Create a token (User Settings > Access Tokens, or Project Settings > Access Tokens for a project-scoped token) with only the read_api scope — do not grant the broader api scope."
+            help: "Create a token (User Settings > Access Tokens, or Project Settings > Access Tokens for a project-scoped token). The read_api scope is enough for read-only use (pulling merge requests, the GitLab Reader trait). Creating or updating merge requests and notes (the GitLab Writer/Manager traits) needs the broader api scope instead."
           - key: base_url
             label: GitLab instance URL
             type: text

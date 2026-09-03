@@ -1,0 +1,234 @@
+version: "1.0"
+namespace: cotique.gitlab.traits
+
+# Agent-tool traits — v2 write-access capability layered on top of the
+# read-only v0.1.0 module. Mirrors kickside/github's real, unpacked
+# registry shape 1:1 (providers-master/github/src/traits/_index.yaml):
+# three agent.trait entries (reader/writer/manager), each with a
+# context_schema picking a connection via the trait picker, a prompt
+# telling the agent what the tool does and does not do, and a tools:
+# list; two function.lua tool entries (read_tool, write_tool) that are
+# two-line pass-through wrappers (source: file://_fn_read_tool.lua /
+# _fn_write_tool.lua) around their real library.lua implementation
+# (read_tool_lib / write_tool_lib, source: file://read_tool.lua /
+# write_tool.lua) — the same "thin wrapper around a real library" split
+# this codebase already uses everywhere else (source/pull_items.lua
+# around source/pull_core.lua).
+#
+# Colocated *_test.lua entries are deliberately NOT declared here. This
+# module's own client/_index.yaml documents (and BUILD-NOTES.md
+# empirically confirms) that a colocated meta.type: test entry under
+# src/ never gets discovered by `wippy test`, even via workspace
+# replacement, not just at publish time — the real, working test.
+# entries for this namespace live in test/src/traits_test.lua and the
+# traits-wiring additions to test/src/wiring_test.lua instead.
+
+entries:
+  - name: reader
+    kind: registry.entry
+    meta:
+      type: agent.trait
+      title: GitLab Reader
+      public: true
+      icon: tabler:brand-gitlab
+      comment: Reads GitLab projects, merge requests, and merge request notes.
+      tags: [gitlab, git, code, merge-requests, read-only]
+      web_component: kickside-connection-trait-picker
+      provider: gitlab
+      context_schema:
+        type: object
+        properties:
+          connection_id:
+            type: string
+            description: GitLab connection component id selected by the trait picker.
+        additionalProperties: false
+    prompt: |
+      You can inspect GitLab through the GitLabRead tool. Use
+      list_merge_requests to find merge requests for a project,
+      get_merge_request for details on one by its project-scoped iid, and
+      list_merge_request_notes for its discussion.
+
+      The GitLab connection is selected on this capability. Do not ask the user
+      for a connection id. Resolve the project id and merge request iid with
+      read actions before relying on them.
+    tools:
+      - cotique.gitlab.traits:read_tool
+
+  - name: read_tool
+    kind: function.lua
+    meta:
+      type: tool
+      mcp:
+        required_scopes: [state.read]
+      title: GitLab Read
+      tags: [gitlab, git, code, merge-requests, read-only]
+      llm_alias: GitLabRead
+      llm_description: "Read GitLab via the configured connection. Actions: list_merge_requests, get_merge_request, list_merge_request_notes. All actions require project_id; get_merge_request and list_merge_request_notes also require iid. Returns JSON text as a string; failures return encoded { success:false, error }."
+      input_schema: |
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "The read action to perform",
+              "enum": ["list_merge_requests", "get_merge_request", "list_merge_request_notes"]
+            },
+            "project_id": { "type": "string", "description": "GitLab project ID or URL-encoded path (e.g. \"278964\" or \"group%2Fproject\")" },
+            "iid": { "type": "string", "description": "Merge request project-scoped iid, required for get_merge_request and list_merge_request_notes" },
+            "state": { "type": "string", "description": "Merge request state filter for list_merge_requests", "enum": ["opened", "merged", "closed", "all"] },
+            "limit": { "type": "integer", "description": "Max rows to return for list actions (default 25, max 100)" },
+            "page": { "type": "integer", "description": "Page number for list actions" }
+          },
+          "required": ["action", "project_id"],
+          "additionalProperties": false
+        }
+      output_schema: |
+        {
+          "type": "string",
+          "description": "JSON text returned as a string. Successful reads return the encoded, normalized GitLab payload, truncated to fit tool output limits. Failures return encoded { success:false, error }."
+        }
+    source: file://_fn_read_tool.lua
+    method: handler
+    modules: [ctx]
+    imports:
+      transport: cotique.gitlab.client:transport
+      output: cotique.gitlab.client:output
+      implementation: cotique.gitlab.traits:read_tool_lib
+
+  - name: read_tool_lib
+    kind: library.lua
+    meta: { name: read_tool_lib, comment: "GitLabRead handler module for tests." }
+    source: file://read_tool.lua
+    modules: [ctx]
+    imports:
+      transport: cotique.gitlab.client:transport
+      output: cotique.gitlab.client:output
+      pull_core: cotique.gitlab.source:pull_core
+
+  - name: writer
+    kind: registry.entry
+    meta:
+      type: agent.trait
+      title: GitLab Writer
+      public: true
+      icon: tabler:brand-gitlab
+      comment: Creates and updates GitLab merge requests and merge request notes.
+      tags: [gitlab, git, code, merge-requests, write]
+      web_component: kickside-connection-trait-picker
+      provider: gitlab
+      context_schema:
+        type: object
+        properties:
+          connection_id:
+            type: string
+            description: GitLab connection component id selected by the trait picker.
+        additionalProperties: false
+    prompt: |
+      You can mutate GitLab merge requests through the GitLabWrite tool:
+      create_merge_request, update_merge_request, and create_note. Use it
+      only for merge-request workflow changes the user requested. This tool
+      never merges, approves, or deletes anything, and it does not change
+      repository files, branches, releases, settings, collaborators, or
+      CI/CD pipelines; those write surfaces are not part of this capability.
+
+      The GitLab connection is selected on this capability. Do not ask the user
+      for a connection id. Use GitLabRead first when you need to verify the
+      project, find the merge request iid, inspect current state, or confirm
+      branches.
+    tools:
+      - cotique.gitlab.traits:write_tool
+
+  - name: manager
+    kind: registry.entry
+    meta:
+      type: agent.trait
+      title: GitLab Manager
+      public: true
+      icon: tabler:brand-gitlab
+      comment: Full read and merge-request-management access for GitLab projects.
+      tags: [gitlab, git, code, merge-requests, read-write]
+      web_component: kickside-connection-trait-picker
+      provider: gitlab
+      context_schema:
+        type: object
+        properties:
+          connection_id:
+            type: string
+            description: GitLab connection component id selected by the trait picker.
+        additionalProperties: false
+    prompt: |
+      You have GitLab project read access and merge-request-management write
+      access. Use GitLabRead to verify the connected project, merge
+      requests, and their notes. Use GitLabWrite only for
+      create_merge_request, update_merge_request, and create_note.
+
+      Preferred workflow: verify the project with GitLabRead, list or
+      inspect the relevant merge request, then perform the requested
+      mutation with GitLabWrite. Do not merge, approve, or delete anything,
+      and do not mutate repository files, branches, releases, settings,
+      collaborators, or CI/CD pipelines; this capability does not grant
+      those operations.
+
+      The GitLab connection is selected on this capability. Do not ask the user
+      for a connection id.
+    tools:
+      - cotique.gitlab.traits:read_tool
+      - cotique.gitlab.traits:write_tool
+
+  - name: write_tool
+    kind: function.lua
+    meta:
+      type: tool
+      mcp:
+        required_scopes: [state.read, state.write]
+      title: GitLab Write
+      tags: [gitlab, git, code, merge-requests, write]
+      llm_alias: GitLabWrite
+      llm_description: "Create and update GitLab merge requests via the configured connection. Actions: create_merge_request, update_merge_request, create_note. Requires project_id; update_merge_request and create_note also require iid. Never merges, approves, or deletes anything. Returns JSON text as a string; failures return encoded { success:false, error }."
+      input_schema: |
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "The write action to perform",
+              "enum": ["create_merge_request", "update_merge_request", "create_note"]
+            },
+            "project_id": { "type": "string", "description": "GitLab project ID or URL-encoded path (e.g. \"278964\" or \"group%2Fproject\")" },
+            "iid": { "type": "string", "description": "Merge request project-scoped iid, required for update_merge_request and create_note" },
+            "title": { "type": "string", "description": "Merge request title for create_merge_request or update_merge_request" },
+            "description": { "type": "string", "description": "Merge request description for create_merge_request or update_merge_request" },
+            "source_branch": { "type": "string", "description": "Source branch, required for create_merge_request" },
+            "target_branch": { "type": "string", "description": "Target branch, required for create_merge_request, optional to change on update_merge_request" },
+            "labels": { "type": "array", "items": { "type": "string" }, "description": "Labels for create_merge_request/update_merge_request. Pass an empty array on update_merge_request to unassign all labels." },
+            "assignee_ids": { "type": "array", "items": { "type": "integer" }, "description": "GitLab user IDs to assign for create_merge_request/update_merge_request" },
+            "reviewer_ids": { "type": "array", "items": { "type": "integer" }, "description": "GitLab user IDs to set as reviewers for create_merge_request/update_merge_request" },
+            "remove_source_branch": { "type": "boolean", "description": "Whether merging should remove the source branch, for create_merge_request" },
+            "state": { "type": "string", "description": "Close or reopen the merge request, for update_merge_request. Never \"merged\" — this tool never merges.", "enum": ["open", "closed"] },
+            "body": { "type": "string", "description": "Note text, required for create_note" }
+          },
+          "required": ["action", "project_id"],
+          "additionalProperties": false
+        }
+      output_schema: |
+        {
+          "type": "string",
+          "description": "JSON text returned as a string. Successful writes return the encoded, normalized GitLab payload, truncated to fit tool output limits. Failures return encoded { success:false, error }."
+        }
+    source: file://_fn_write_tool.lua
+    method: handler
+    modules: [ctx]
+    imports:
+      transport: cotique.gitlab.client:transport
+      output: cotique.gitlab.client:output
+      implementation: cotique.gitlab.traits:write_tool_lib
+
+  - name: write_tool_lib
+    kind: library.lua
+    meta: { name: write_tool_lib, comment: "GitLabWrite handler module for tests." }
+    source: file://write_tool.lua
+    modules: [ctx]
+    imports:
+      transport: cotique.gitlab.client:transport
+      output: cotique.gitlab.client:output
+      pull_core: cotique.gitlab.source:pull_core

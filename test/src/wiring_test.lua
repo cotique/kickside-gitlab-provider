@@ -7,6 +7,7 @@
 -- line up.
 local test = require("test")
 local registry = require("registry")
+local json = require("json")
 
 local CONNECTION_ID = "cotique.gitlab.connection:gitlab_connection"
 local GET_STATUS_ID = "cotique.gitlab.connection:get_status"
@@ -18,6 +19,14 @@ local SOURCE_BINDING_ID = "cotique.gitlab.source:project_mrs_source"
 local PULL_ITEMS_ID = "cotique.gitlab.source:pull_items"
 local PULL_KEYS_ID = "cotique.gitlab.source:pull_keys"
 local PORT_ID = "cotique.gitlab.source:project_mrs"
+
+local READER_TRAIT_ID = "cotique.gitlab.traits:reader"
+local WRITER_TRAIT_ID = "cotique.gitlab.traits:writer"
+local MANAGER_TRAIT_ID = "cotique.gitlab.traits:manager"
+local READ_TOOL_ID = "cotique.gitlab.traits:read_tool"
+local WRITE_TOOL_ID = "cotique.gitlab.traits:write_tool"
+local READ_TOOL_LIB_ID = "cotique.gitlab.traits:read_tool_lib"
+local WRITE_TOOL_LIB_ID = "cotique.gitlab.traits:write_tool_lib"
 
 local function get(id)
     local entry, err = registry.get(id)
@@ -159,6 +168,106 @@ local function define_tests()
             test.eq(connection_id_field.provider, "gitlab")
         end)
 
+    end)
+
+    -- v2 write-access agent-tool traits (src/traits/). Registry-shape only —
+    -- handler behavior (validation, dispatch against a fake client) is
+    -- covered separately in test/src/traits_test.lua, matching this
+    -- module's own established split (pull_core_test.lua for logic,
+    -- wiring_test.lua for registry wiring).
+    test.describe("cotique.gitlab traits wiring", function()
+        local function trait_meta(id)
+            local meta = meta_of(get(id))
+            test.eq(meta.type, "agent.trait")
+            test.is_true(meta.public)
+            test.eq(meta.web_component, "kickside-connection-trait-picker")
+            test.eq(meta.provider, "gitlab")
+            test.eq(meta.context_schema.type, "object")
+            test.not_nil(meta.context_schema.properties.connection_id)
+            test.eq(meta.context_schema.additionalProperties, false)
+            return meta
+        end
+
+        test.it("declares reader/writer/manager as public context-configurable traits", function()
+            trait_meta(READER_TRAIT_ID)
+            trait_meta(WRITER_TRAIT_ID)
+            trait_meta(MANAGER_TRAIT_ID)
+        end)
+
+        test.it("reader grants only the read tool; writer only the write tool", function()
+            local reader = data_of(get(READER_TRAIT_ID))
+            test.eq(#reader.tools, 1)
+            test.eq(qualify(reader.tools[1], "cotique.gitlab.traits"), READ_TOOL_ID)
+
+            local writer = data_of(get(WRITER_TRAIT_ID))
+            test.eq(#writer.tools, 1)
+            test.eq(qualify(writer.tools[1], "cotique.gitlab.traits"), WRITE_TOOL_ID)
+        end)
+
+        test.it("manager grants both read and write tools and states the same write restraint", function()
+            local manager = data_of(get(MANAGER_TRAIT_ID))
+            test.eq(qualify(manager.tools[1], "cotique.gitlab.traits"), READ_TOOL_ID)
+            test.eq(qualify(manager.tools[2], "cotique.gitlab.traits"), WRITE_TOOL_ID)
+            local prompt = tostring(manager.prompt or "")
+            test.ok(prompt:find("Do not ask the user"))
+            test.ok(prompt:find("Do not merge, approve, or delete"))
+        end)
+
+        test.it("writer/manager prompts state the write scope restriction explicitly", function()
+            local writer_prompt = tostring(data_of(get(WRITER_TRAIT_ID)).prompt or "")
+            test.ok(writer_prompt:find("never merges, approves, or deletes"))
+            test.ok(writer_prompt:find("repository files, branches, releases, settings, collaborators"))
+        end)
+
+        test.it("read_tool declares state.read; write_tool declares state.read + state.write", function()
+            local read_meta = meta_of(get(READ_TOOL_ID))
+            test.eq(read_meta.type, "tool")
+            test.not_nil(read_meta.mcp, "read_tool must declare meta.mcp")
+            test.eq(#read_meta.mcp.required_scopes, 1)
+            test.eq(read_meta.mcp.required_scopes[1], "state.read")
+
+            local write_meta = meta_of(get(WRITE_TOOL_ID))
+            test.eq(write_meta.type, "tool")
+            test.not_nil(write_meta.mcp, "write_tool must declare meta.mcp")
+            local scopes = write_meta.mcp.required_scopes
+            local has_read, has_write = false, false
+            for _, s in ipairs(scopes) do
+                if s == "state.read" then has_read = true end
+                if s == "state.write" then has_write = true end
+            end
+            test.is_true(has_read, "write_tool must require state.read")
+            test.is_true(has_write, "write_tool must require state.write")
+        end)
+
+        test.it("read_tool/write_tool action enums cover every documented action, and never a merge action", function()
+            local read_schema, rerr = json.decode(tostring(meta_of(get(READ_TOOL_ID)).input_schema or ""))
+            test.is_nil(rerr)
+            local write_schema, werr = json.decode(tostring(meta_of(get(WRITE_TOOL_ID)).input_schema or ""))
+            test.is_nil(werr)
+
+            local function contains(list, value)
+                for _, v in ipairs(list or {}) do
+                    if v == value then return true end
+                end
+                return false
+            end
+
+            for _, action in ipairs({ "list_merge_requests", "get_merge_request", "list_merge_request_notes" }) do
+                test.is_true(contains(read_schema.properties.action.enum, action), "read_tool missing action " .. action)
+            end
+            for _, action in ipairs({ "create_merge_request", "update_merge_request", "create_note" }) do
+                test.is_true(contains(write_schema.properties.action.enum, action), "write_tool missing action " .. action)
+            end
+            test.eq(#write_schema.properties.action.enum, 3, "write_tool must expose exactly the three documented actions")
+            -- Never merge — this is the one operation explicitly and
+            -- repeatedly out of scope per the shared build brief.
+            test.is_true(contains(write_schema.properties.action.enum, "merge") == false, "write_tool must not expose a merge action")
+        end)
+
+        test.it("read_tool_lib/write_tool_lib backing library entries exist", function()
+            get(READ_TOOL_LIB_ID)
+            get(WRITE_TOOL_LIB_ID)
+        end)
     end)
 end
 

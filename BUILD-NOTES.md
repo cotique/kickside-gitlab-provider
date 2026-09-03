@@ -95,11 +95,15 @@ oversight — GitLab's own product supports self-managed instances as a
 first-class deployment mode, and a connector that hardcodes gitlab.com would
 be unusable for a large fraction of real GitLab users.
 
-### Deliberate scope decision: no agent-tool traits
+### Deliberate scope decision: no agent-tool traits (v0.1.0 — SUPERSEDED, see "v2" below)
 
-`kickside.github.traits:*` (reader/writer/manager agent tools) has no
-counterpart here. Out of explicit scope for this task per the shared build
-brief — noted here so it reads as a decision, not an oversight.
+At v0.1.0, `kickside.github.traits:*` (reader/writer/manager agent tools)
+had no counterpart here — out of explicit scope for that task per the
+shared build brief, noted so it read as a decision, not an oversight.
+**This is no longer current**: the "v2: write-access agent-tool traits"
+section further below adds `cotique.gitlab.traits:reader`/`:writer`/
+`:manager`. Left this note in place rather than deleting it, since it's
+still accurate history for why v0.1.0 shipped without traits.
 
 ## RESOLVED: `kickside.data:pullable`'s exact envelope
 
@@ -612,8 +616,8 @@ confirmed fine, no change needed:
   "site"/cloudId indirection) — not applicable, neither GitLab nor Bitbucket
   needs an equivalent.
 - Agent-tool traits (`jira/traits`, `confluence/traits`, `github/traits`) —
-  confirmed still correctly out of scope (see "Deliberate scope decisions"
-  above).
+  confirmed correctly out of scope for v0.1.0 (see "Deliberate scope
+  decisions" above; added in the "v2" pass further below).
 - `kickside.data:writable` sinks (`jira/sink`, `confluence/sink` — real
   Atlassian can also *write* issues/pages via Data Sync) — confirmed
   correctly absent; this module is read-only per eng-metrics SPEC.md
@@ -737,3 +741,182 @@ instead of `latest`, per that file's own stated policy ("set an exact tag
 only to bisect a runtime regression" — this is exactly that case). Not a
 permanent fix — revert to `latest` once a release without this regression
 ships, or re-pin/bisect again if it recurs.
+
+## v2: write-access agent-tool traits (`src/traits/`) — 2026-09-03
+
+Adds a write capability on top of the v0.1.0 read-only module, per the
+shared build brief and the GitLab-specific brief: `agent.trait`
+reader/writer/manager entries an LLM agent picks a connection for and calls
+interactively, mirroring `kickside/github`'s real, unpacked
+`src/traits/` 1:1 in registry shape (`providers-master/github/src/traits/`).
+This is not a Data Sync writable sink — the pull source in `source/` is
+untouched and stays read-only.
+
+### What was built
+
+- `src/traits/_index.yaml` — `reader`/`writer`/`manager` (`agent.trait`),
+  `read_tool`/`write_tool` (`function.lua`, two-line pass-through wrappers,
+  `_fn_read_tool.lua`/`_fn_write_tool.lua`), `read_tool_lib`/`write_tool_lib`
+  (`library.lua`, the real implementations, `read_tool.lua`/`write_tool.lua`).
+  `writer`: `create_merge_request`, `update_merge_request`,
+  `create_note`. `reader`: `list_merge_requests`, `get_merge_request`,
+  `list_merge_request_notes`. Same scope discipline as GitHub's own
+  writer/manager prompts, stated to the agent in the trait `prompt:` text
+  itself, not just in a code comment: never merge, approve, delete, or touch
+  repository files, branches, releases, settings, collaborators, or CI/CD
+  pipelines.
+- `read_tool.lua` reuses `source/pull_core.lua`'s real, tested
+  `list_merge_requests` (pagination + normalization) for the
+  `list_merge_requests` action — unwrapping pull_core's pullable-envelope
+  items (`item_key`/`dedup_key`/`op`/...) down to just the normalized
+  `payload`, since an agent tool caller has no use for Data Sync's own
+  cursor/dedup vocabulary. `get_merge_request`/`list_merge_request_notes`
+  have no existing wrapper to reuse (pull_core only ever fetched MR lists),
+  so they call `client:get` directly with hand-built paths, the same way
+  `pull_core.lua` itself does.
+- `client/api.lua` gained `client.post`/`client.put` — generic write verbs,
+  parallel to the existing `client.get`, same DataError mapping. **Not**
+  live-verified (see the next section). `client/transport.lua` needed no
+  change: `transport.resolve` already hands back the same `client:api`
+  instance these new methods live on.
+- `write_tool.lua` owns the three entity-specific operations
+  (`M.create_merge_request`/`M.update_merge_request`/`M.create_note`),
+  **not** `client/api.lua` — a deliberate placement choice, not a literal
+  reading of the shared build brief's "extend client:api with
+  create_merge_request/..." wording. `client/api.lua`'s own established,
+  tested convention (see its file header, and `source/pull_core.lua`) is
+  that it stays a purely generic REST client (`get`/`post`/`put` by path);
+  every entity-specific path/body already lives one layer up
+  (`pull_core.lua` for reads). Kept that split consistent for writes too,
+  rather than mixing generic and entity-specific concerns into one file.
+  Documented here specifically because it deviates from the shared brief's
+  literal wording, even though it satisfies its actual intent (the three
+  named write operations exist, are testable against a fake client, and
+  `client:api` genuinely gained the new write-call capability).
+- `client/output.lua` gained `M.encode(data, max_output)` — redact (reusing
+  the existing, unchanged, independently-tested `M.redact`) + JSON-encode +
+  UTF-8-safe truncate, matching the real `kickside/github` reference's
+  `client:output.encode` shape
+  (`providers-master/github/src/client/output.lua`). This module's own
+  `output.lua` only ever had `redact`/`REDACTED` before — GitHub's reference
+  traits assume an `encode` helper exists on `client:output` that this
+  module's `output.lua` didn't have yet; added it additively, existing
+  `redact`/`REDACTED` behavior and `output_test.lua` untouched.
+- `connection/_index.yaml`'s `gitlab_connection` `token` field `help:` text
+  updated: `read_api` is enough for read-only use, the broader `api` scope
+  is needed for the Writer/Manager traits. No new credential field, no scope
+  selector, no up-front scope enforcement — an under-scoped token simply
+  fails a write call with a real 403 from GitLab, mapped through the
+  existing `permission_denied` DataError taxonomy. Matches the shared
+  brief's explicit instruction.
+- `README.md`, `src/README.md`, `wippy.yaml`'s `description:`, and
+  `src/_index.yaml`'s `definition` `meta.description` — all four previously
+  said some form of "read-only" / "never creates, updates, merges, comments
+  on, approves, or labels anything," which becomes false once this lands.
+  Corrected all four, not just the two the shared brief named explicitly
+  (root `README.md`, `src/README.md`) — `wippy.yaml`/`src/_index.yaml`'s
+  descriptions are the same class of now-false claim, just in different
+  files, and a Hub visitor reads those too.
+- Tests: `test/src/traits_test.lua` (new) — handler behavior against a fake
+  `client:api` (validation, `pull_core` reuse on the read side, request-body
+  shaping — comma-joined labels, integer id arrays, the `state_event`
+  translation — and response normalization on the write side, error
+  surfacing including a real `data_error.from_result(403, ...)` ->
+  `permission_denied` mapping exercised directly, no hand-rolled fake for
+  that one case). `test/src/wiring_test.lua` extended with a
+  `"cotique.gitlab traits wiring"` describe block — registry shape only
+  (agent.trait meta, context_schema, tools: lists, mcp.required_scopes
+  including `state.write` on `write_tool`, action enums, never a `merge`
+  action). 52/52 total (was 45 before this pass: 7 wiring-test cases + 12
+  traits_test cases added, minus none removed).
+
+### Write endpoints — verified against docs, not live
+
+Per the shared brief's explicit rule: the read side's earlier live-call
+verification (see "Empirically-verified REST API pagination shapes" above)
+was safe because it only ever issued read-only `GET`s against public repos.
+Actually creating/mutating a merge request or note on a real project is a
+different kind of action entirely — no test repo, no write-scoped
+credential, and not something to do without explicit authorization. **None
+of the three write operations were exercised against a live GitLab API in
+this pass.** Instead, every field name/shape below was checked directly
+against the live `docs.gitlab.com` pages on 2026-09-03 (not from memory,
+not from the provider brief's own summary of them — the brief flagged the
+`state`/`state_event` field specifically as "verify this yourself," so all
+three endpoints' full parameter tables were pulled fresh):
+
+- **Create MR** (`POST /projects/:id/merge_requests`,
+  `docs.gitlab.com/ee/api/merge_requests.html`, "Create a merge request"):
+  required `source_branch`, `target_branch`, `title`. Optional fields used
+  here: `description`, `labels` (comma-separated **string**, confirmed —
+  not an array), `assignee_ids`/`reviewer_ids` (integer **arrays**, not the
+  singular `assignee_id`/`reviewer_id` the provider brief guessed —
+  `assignee_id` does also exist but the plural form matches both create and
+  update and is what this tool exposes), `remove_source_branch` (boolean).
+- **Update MR** (`PUT /projects/:id/merge_requests/:merge_request_iid`,
+  same page, "Update MR"): all fields optional, at least one required. The
+  one field the provider brief explicitly flagged as needing direct
+  verification: **the real wire field is `state_event`, values `close` /
+  `reopen` — NOT `state` with `opened`/`closed`.** Confirmed by pulling the
+  live page's actual "Update MR" attribute table (`state_event string No
+  New state (close/reopen).`), not inferred. `write_tool.lua`'s tool-facing
+  schema still exposes the friendlier `state: open|closed` vocabulary
+  (matching GitHub's own `update_issue` shape, per the shared brief), and
+  translates it to `state_event` internally
+  (`open -> reopen`, `closed -> close`) — the wrong field name never leaks
+  into either the tool schema or the wire request.
+- **Create note** (`POST /projects/:id/merge_requests/:merge_request_iid/notes`,
+  `docs.gitlab.com/ee/api/notes.html`): required `body` (string).
+
+What remains genuinely unverified, disclosed here rather than silently:
+whether these three calls actually succeed end-to-end against a real
+project (auth header handling, exact response shape/status code on a real
+2xx, how a real 403 vs. 422 vs. 429 actually renders through GitLab's own
+error body on a write path specifically, as opposed to the read path this
+module already live-verified). `client/api.lua`'s `client.post`/`client.put`
+reuse the exact same header/status-code/error-mapping logic as the already
+live-verified `client.get` (same file, same `data_error.from_result` call),
+so the mechanics are the same proven code path — only the write-specific
+request bodies and response shapes above are new and not live-checked.
+**Someone with a real test repo and a write-scoped token should exercise
+all three actions for real before this ships to any actual user** — this is
+the same kind of open item the shared brief asked to be stated plainly, not
+resolved by assumption.
+
+### Verification
+
+`make verify` run from a genuinely fresh checkout (`test/wippy.lock`,
+`test/.wippy/vendor`, and the root `wippy.lock` all deleted first, matching
+this project's own standing practice for avoiding stale-cache false
+confidence): `wippy update` (both root and `test/`), `check-module.mjs`,
+`wippy lint --ns "cotique.gitlab.*"` clean (53 entries checked, 0 errors),
+`wippy test` 52/52 passing. `make postgres-up` could not be exercised in
+this environment — Docker Desktop's engine pipe is not available here (not
+the previously-documented port-5433 conflict; a different, purely
+environmental blocker this time) — but this pass touches no
+persistence/migration code at all (no SQL, no schema, nothing under a `db.*`
+resource), so AGENTS.md's "every persistence or migration change passes
+both SQLite and PostgreSQL" does not apply to it; SQLite is the meaningful
+check here and it is clean.
+
+### Lint fixes worth recording (new type-checker gotchas beyond #3/#4/#7 above)
+
+- `wippy lint` rejected a shared `client.post`/`client.put` implementation
+  that took the HTTP verb function (`http_client.post`/`http_client.put`)
+  as a parameter and built the request-options table in a helper, then
+  passed the resulting local variable into it — the checker only propagates
+  the target function's expected parameter type INTO a table literal when
+  that literal is written directly at the call site (exactly how the
+  existing `client.get` does it), not through an intermediate variable.
+  Fixed by having `client.post`/`client.put` each build their options table
+  inline at their own `http_client.post(...)`/`http_client.put(...)` call
+  site (a few duplicated lines), sharing only the body-encoding and
+  response-interpretation halves that don't touch that literal.
+- `write_tool.lua`'s `id_list` helper (typed `{ number }?`) failed lint
+  when it unconditionally appended `tonumber(v)` (typed `number?`) into the
+  output array, inferring `{[integer]: number?}` instead. Fixed by only
+  appending when `tonumber(v)` narrows truthy.
+- `client/output.lua` needed no new type-checker workaround — it was, and
+  remains, written in this codebase's untyped/loosely-inferred Lua style
+  (no Luau `: type` annotations anywhere in the file), matching its
+  original form; `M.encode` was added in that same style.
