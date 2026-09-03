@@ -12,6 +12,21 @@
 --     X-Total-Pages are NOT present on list endpoints — never depend on a
 --     total count to decide when to stop paginating.
 --
+-- client.post/client.put (write verbs, added for the v2 write-access agent
+-- traits — see src/traits/) are built against GitLab's CURRENT DOCUMENTED
+-- REST API shapes (docs.gitlab.com/ee/api/merge_requests.html,
+-- .../notes.html — checked live 2026-09-03), NOT verified via a live call:
+-- per the shared build brief, actually creating/mutating a merge request or
+-- note on a real project is out of scope for this pass (no test repo, no
+-- write-scoped credential). See BUILD-NOTES.md, "Write endpoints — verified
+-- against docs, not live" for exactly what that means and what remains to
+-- be exercised for real before this ships to a user. Deliberately kept
+-- generic (path + JSON body in, decoded JSON body out) rather than
+-- entity-specific — the entity-specific create_merge_request/
+-- update_merge_request/create_note operations live in src/traits/write_tool.lua,
+-- mirroring how source/pull_core.lua (not this file) owns the entity-specific
+-- read paths on top of client.get.
+--
 -- Deliberately not a metatable/class object (this codebase's own convention
 -- — see repo.lua in the template scaffold this module started from — is
 -- plain module-level tables of named functions, and the Wippy Luau-style
@@ -132,6 +147,99 @@ function M.new(opts)
         end
 
         return { body = decoded, headers = resp.headers, status_code = resp.status_code }, nil
+    end
+
+    -- Shared write-verb helpers for client.post/client.put. Mirrors
+    -- client.get's error handling exactly (same status-code -> DataError
+    -- mapping, same "no HTTP response at all" -> status_code 0 convention),
+    -- differing only in that a JSON-encoded request body is sent and an
+    -- empty (or absent) response body is treated as a valid success rather
+    -- than an error — several GitLab write endpoints can return 2xx with no
+    -- body, per the documented shapes this was built against (see the file
+    -- header note on client.post/client.put).
+    --
+    -- Deliberately NOT one shared function that builds the options table and
+    -- hands it to a passed-in HTTP verb function: `wippy lint` rejects a
+    -- request-options table built in a helper and then passed as an already-
+    -- typed local variable into http_client.post/put — the type checker only
+    -- propagates the expected parameter type INTO a table literal when that
+    -- literal is written directly at the call site (exactly how client.get
+    -- above does it), not through an intermediate variable. client.post and
+    -- client.put therefore each build their inline options table literal
+    -- directly at their own http_client.post(...)/http_client.put(...) call
+    -- site (a few duplicated lines); only the body-encoding and
+    -- response-interpretation halves, which don't touch that literal, are
+    -- shared below.
+    local function encode_write_body(req_body, scope)
+        if req_body == nil then return "{}", nil end
+        local encoded, encode_err = json.encode(req_body)
+        if encode_err then
+            return nil, data_error.failure("invalid_request", "failed to encode request body: " .. tostring(encode_err), false, scope)
+        end
+        return encoded, nil
+    end
+
+    local function write_response(resp, err, scope)
+        local action = "GitLab " .. scope .. " request"
+        if err then
+            return nil, data_error.from_result({ status_code = 0, error = transport_message(err) }, action)
+        end
+
+        if resp.status_code < 200 or resp.status_code >= 300 then
+            local message = extract_message(resp.body) or ("HTTP " .. tostring(resp.status_code))
+            return nil, data_error.from_result({ status_code = resp.status_code, error = message }, action)
+        end
+
+        local body = resp.body
+        if type(body) ~= "string" or body == "" then
+            return { body = nil, headers = resp.headers, status_code = resp.status_code }, nil
+        end
+
+        local decoded, derr = json.decode(body)
+        if derr then
+            return nil, data_error.failure(
+                "invalid_response",
+                "GitLab response was not valid JSON: " .. tostring(derr),
+                false,
+                scope)
+        end
+
+        return { body = decoded, headers = resp.headers, status_code = resp.status_code }, nil
+    end
+
+    -- POST path with a JSON-encoded body and optional { query =, scope = }.
+    -- Same return convention as client.get: { body, headers, status_code },
+    -- nil on success, or nil, <DataError envelope> on failure.
+    function client.post(_, path, req_body, post_opts)
+        post_opts = type(post_opts) == "table" and post_opts or {}
+        local scope = type(post_opts.scope) == "string" and post_opts.scope or "request"
+        local encoded_body, berr = encode_write_body(req_body, scope)
+        if berr or not encoded_body then return nil, berr end
+
+        local resp, err = http_client.post(base_url .. path, {
+            headers = { ["PRIVATE-TOKEN"] = token, ["Content-Type"] = "application/json" },
+            body = encoded_body,
+            query = type(post_opts.query) == "table" and post_opts.query or {},
+            timeout = "30s",
+        })
+        return write_response(resp, err, scope)
+    end
+
+    -- PUT path with a JSON-encoded body and optional { query =, scope = }.
+    -- Same return convention as client.get/client.post.
+    function client.put(_, path, req_body, put_opts)
+        put_opts = type(put_opts) == "table" and put_opts or {}
+        local scope = type(put_opts.scope) == "string" and put_opts.scope or "request"
+        local encoded_body, berr = encode_write_body(req_body, scope)
+        if berr or not encoded_body then return nil, berr end
+
+        local resp, err = http_client.put(base_url .. path, {
+            headers = { ["PRIVATE-TOKEN"] = token, ["Content-Type"] = "application/json" },
+            body = encoded_body,
+            query = type(put_opts.query) == "table" and put_opts.query or {},
+            timeout = "30s",
+        })
+        return write_response(resp, err, scope)
     end
 
     return client

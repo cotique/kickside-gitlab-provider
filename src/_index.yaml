@@ -8,7 +8,7 @@ entries:
     readme: file://README.md
     meta:
       title: GitLab Connector
-      description: Read-only GitLab connector — a personal/project access token connection provider plus a merge-request pull source for Kickside Data Sync. Never creates, updates, merges, comments on, approves, or labels anything.
+      description: GitLab connector — a personal/project access token connection provider, a merge-request pull source for Kickside Data Sync, and agent-tool traits for reading and creating/updating merge requests and notes. The write traits never merge, approve, delete, or touch repository files, branches, releases, settings, collaborators, or CI/CD pipelines.
 
   # ─── Dependencies ──────────────────────────────────────────────────────
   # cotique.gitlab:dep.kickside.contract

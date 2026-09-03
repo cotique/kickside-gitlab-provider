@@ -1,9 +1,13 @@
 # GitLab Connector
 
-Read-only Kickside connector for GitLab — a personal/project access token
-connection provider plus a merge-request pull source for Kickside Data
-Sync. Never creates, updates, merges, comments on, approves, or labels
-anything.
+Kickside connector for GitLab — a personal/project access token connection
+provider, a merge-request pull source for Kickside Data Sync, and
+agent-tool traits (reader/writer/manager) an LLM agent can call
+interactively to read merge requests and notes, and to create or update
+merge requests and notes. The write traits never merge, approve, delete, or
+touch repository files, branches, releases, settings, collaborators, or
+CI/CD pipelines — see `src/traits/_index.yaml`'s writer/manager prompts for
+the exact restriction stated to the agent.
 
 See [`src/README.md`](src/README.md) for the module's own auth/layout/planes
 summary (the same content the Wippy Hub's "Read Me" tab shows) and
@@ -28,6 +32,15 @@ envelope, and the real reference source this module was built against.
 - `cotique.gitlab.source:project_mrs_source` implements
   `kickside.data:pullable`; `cotique.gitlab.source:project_mrs` is the
   `kickside.automation.port` entry exposing it to Data Sync.
+- `cotique.gitlab.traits:reader` / `:writer` / `:manager` — agent-tool
+  traits (`agent.trait` registry entries) an LLM agent picks a connection
+  for and calls interactively: `reader` exposes `list_merge_requests`,
+  `get_merge_request`, `list_merge_request_notes`; `writer` exposes
+  `create_merge_request`, `update_merge_request` (title/description/
+  labels/reviewers/assignees, and closing/reopening only — never
+  merging), `create_note`; `manager` grants both. This is separate from
+  the Data Sync pull source above — an interactive tool call, not an
+  automated write-back mechanism.
 - `test/` — an isolated standalone harness plus behavioral/wiring suites.
 
 This module owns no persistence of its own — Kickside Data Sync's own engine
