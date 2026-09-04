@@ -626,6 +626,13 @@ confirmed fine, no change needed:
   reference) — matches this module's own equivalent pattern already.
 - Empty `src/migrations/_index.yaml` namespace stub in real Atlassian —
   vestigial (zero entries); not needed here since neither module owns SQL.
+- No custom Connect/picker UI needed for a credential-only connection —
+  checked every credential-only, no-picker connection provider in the real
+  reference monorepo (`discord`, `slack`, `telegram`, `sso-github`,
+  `sso-google`, `sso-microsoft`, `sso-oidc`); none ship a `ui/`, `api/`, or
+  `security/` folder, and none declare `embed:` in `wippy.yaml`. Full
+  removal writeup in the "RESOLVED: removed the UI/api/security apparatus"
+  section below.
 
 Found and fixed:
 
@@ -648,13 +655,42 @@ Flagged, not changed (a real decision, not a technical correctness issue):
 
 ## RESOLVED: removed the UI/api/security apparatus (2026-09-02, later the same session)
 
-Moved to the shared platform findings file
-(`C:\claude\work\wippy\work-wippy\FINDINGS.md`) — see "A credential-only,
-no-picker connection provider needs no `ui/`, `api/`, or `security/`
-folder, no `embed:`, and no `kickside/core` dependency". (This heading's
-full content was lost without a pointer during an earlier documentation
-pass on this file; restored here from the identical finding independently
-confirmed and preserved on the sibling `kickside-bitbucket-provider` repo.)
+Per the structural audit above, checked every module in `providers-master`
+for whether a *credential-only, no-picker* connection provider needs any
+custom UI/HTTP surface at all. Several real modules are exactly this shape —
+`discord` (bot token), `slack`, `telegram`, `sso-github`, `sso-google`,
+`sso-microsoft`, `sso-oidc` — and **none of them ship a `ui/`, `api/`, or
+`security/` folder, and none declare `embed:` in `wippy.yaml`.** This
+module's own `src/api/` (a custom `GET /gitlab-provider/status` endpoint),
+`src/security/` (the policy gating that endpoint), and the entire `ui/`
+(status Vue page) + `static/` (its built bundle) + the `ui_fs`/`ui_static`/
+`gitlab_provider_view`/`nav_item` registry entries were template-demo
+leftovers (originally the log-sink scaffold's own status page), adapted
+rather than removed in the initial build pass.
+
+**Removed:** `src/api/`, `src/security/`, `ui/`, `static/`; the
+`api_router`/`ui_server` `ns.requirement`s and `ui_fs`/`ui_static`/
+`gitlab_provider_view`/`nav_item` entries from `src/_index.yaml`; the
+`embed:` block from `wippy.yaml`; the `build`/`typecheck`/`dev` Makefile
+targets and `EMBED` var; the corresponding assertions in
+`test/src/wiring_test.lua`.
+
+**One real risk this touched:** `scripts/check-module.mjs` unconditionally
+read `ui/package.json`/`ui/vite.config.ts`/`ui/src/styles.css` — deleting
+`ui/` outright would have crashed `make check` with ENOENT. Patched it to
+gate every frontend-contract check behind `const hasUi = await
+exists(resolve(root, 'ui/package.json'))`, so the same script stays correct
+if a future module built from this template does add a UI.
+
+`make verify` re-run clean after all of this: 33/33 tests, lint clean, no
+build/typecheck step to run.
+
+(This section's content was briefly reduced to a bare pointer during a
+documentation-extraction pass on this file, citing a shared platform
+findings-file entry that was never actually written there. Restored here in
+full — this module's own genuine, empirically-checked finding, not merely
+inferred from the sibling `kickside-bitbucket-provider` repo, though that
+repo's own copy of the same finding corroborates it independently.)
 
 ## Renamed module identity: cotique/gitlab-provider -> cotique/gitlab (2026-09-03)
 
